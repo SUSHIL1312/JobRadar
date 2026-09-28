@@ -21,6 +21,7 @@ import {
   History,
   Copy,
   Check,
+  Trash2,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { ApplicationStatusHistory } from '../../types';
@@ -29,6 +30,7 @@ interface JobDetailDrawerProps {
   job: NormalizedJob | null;
   onClose: () => void;
   onStatusChange: (jobId: string, newStatus: JobStatus) => Promise<void>;
+  onDeleteJob?: (jobId: string) => Promise<void>;
   onSaveNotes: (jobId: string, notes: string) => Promise<void>;
   onSaveInterview: (jobId: string, date: string, round?: string) => Promise<void>;
   onSaveOffer: (jobId: string, salary: number, currency?: string) => Promise<void>;
@@ -38,6 +40,7 @@ export const JobDetailDrawer: React.FC<JobDetailDrawerProps> = ({
   job,
   onClose,
   onStatusChange,
+  onDeleteJob,
   onSaveNotes,
   onSaveInterview,
   onSaveOffer,
@@ -185,6 +188,23 @@ export const JobDetailDrawer: React.FC<JobDetailDrawerProps> = ({
               <XCircle className="w-3.5 h-3.5" />
               Reject
             </Button>
+            {onDeleteJob && (
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={async () => {
+                  if (window.confirm(`Permanently delete "${job.title}" (${job.jobId || job.id.slice(0, 10)})?`)) {
+                    await onDeleteJob(job.id);
+                    onClose();
+                  }
+                }}
+                className="bg-danger/10 text-danger border border-danger/30 hover:bg-danger/20"
+                title="Delete job permanently"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete
+              </Button>
+            )}
           </div>
 
           <a

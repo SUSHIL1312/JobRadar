@@ -3,6 +3,7 @@ import { JobSearchProfile, Seniority, RemotePreference } from '../../types';
 import { Button } from '../components/ui/Button';
 import { Chip } from '../components/ui/Chip';
 import { useToast } from '../components/ui/Toast';
+import { PasswordConfirmModal } from '../components/ui/PasswordConfirmModal';
 import { api } from '../lib/api';
 import {
   User,
@@ -14,6 +15,7 @@ import {
   Briefcase,
   DollarSign,
   AlertTriangle,
+  Trash2,
 } from 'lucide-react';
 
 export const ProfileView: React.FC = () => {
@@ -21,6 +23,7 @@ export const ProfileView: React.FC = () => {
   const [profile, setProfile] = useState<JobSearchProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showClearModal, setShowClearModal] = useState(false);
 
   // Input states for tag additions
   const [newSkill, setNewSkill] = useState('');
@@ -55,6 +58,38 @@ export const ProfileView: React.FC = () => {
       toast('Failed to save profile', 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleClearProfile = async (password: string) => {
+    try {
+      await api.resetProfile(password);
+      setProfile({
+        id: 'user_profile_main',
+        fullName: '',
+        email: '',
+        title: '',
+        yearsOfExperience: 0,
+        currentRole: '',
+        currentCompany: '',
+        skills: [],
+        jobTitles: [],
+        seniorityLevels: [],
+        locations: [],
+        remotePreference: 'remote_preferred',
+        employmentTypes: ['full_time'],
+        minimumSalary: undefined,
+        salaryCurrency: 'INR',
+        preferredCompanies: [],
+        excludedCompanies: [],
+        keywords: [],
+        excludedKeywords: [],
+        enabledSources: ['greenhouse', 'lever', 'remotive'],
+      });
+      toast('Career profile cleared successfully from D1', 'success');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to clear profile';
+      throw new Error(msg);
     }
   };
 
@@ -111,10 +146,21 @@ export const ProfileView: React.FC = () => {
           </p>
         </div>
 
-        <Button variant="accent" loading={saving} onClick={handleSave} className="shrink-0">
-          <Save className="w-4 h-4 mr-1.5" />
-          Save Profile
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => setShowClearModal(true)}
+            className="shrink-0"
+          >
+            <Trash2 className="w-4 h-4 mr-1.5" />
+            Clear Profile
+          </Button>
+          <Button variant="accent" loading={saving} onClick={handleSave} className="shrink-0">
+            <Save className="w-4 h-4 mr-1.5" />
+            Save Profile
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-6">
@@ -439,6 +485,15 @@ export const ProfileView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <PasswordConfirmModal
+        isOpen={showClearModal}
+        title="Clear Entire Career Profile?"
+        description="This will permanently delete your stored career profile, skills, target titles, company preferences, and experience from Cloudflare D1 so you can configure everything fresh."
+        confirmButtonText="Yes, Wipe Profile"
+        onClose={() => setShowClearModal(false)}
+        onConfirm={handleClearProfile}
+      />
     </div>
   );
 };

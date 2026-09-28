@@ -812,6 +812,37 @@ export class JobRadarRepository {
   }
 
   // --- 9. Data Export & Reset ---
+  public async deleteJob(identifier: string): Promise<boolean> {
+    const job = await this.getJobById(identifier);
+    if (!job) return false;
+
+    const actualId = job.id;
+    await this.db.prepare('DELETE FROM job_matches WHERE job_id = ?').bind(actualId).run();
+    await this.db.prepare('DELETE FROM application_status_history WHERE job_id = ?').bind(actualId).run();
+    await this.db.prepare('DELETE FROM job_applications WHERE job_id = ?').bind(actualId).run();
+    const res = await this.db.prepare('DELETE FROM jobs WHERE id = ?').bind(actualId).run();
+    return res.success;
+  }
+
+  public async deleteJobs(identifiers: string[]): Promise<number> {
+    let count = 0;
+    for (const id of identifiers) {
+      const ok = await this.deleteJob(id);
+      if (ok) count++;
+    }
+    return count;
+  }
+
+  public async resetProfile(): Promise<void> {
+    await this.db.prepare('DELETE FROM user_skills').run();
+    await this.db.prepare('DELETE FROM user_target_titles').run();
+    await this.db.prepare('DELETE FROM user_seniority_preferences').run();
+    await this.db.prepare('DELETE FROM user_location_preferences').run();
+    await this.db.prepare('DELETE FROM user_company_preferences').run();
+    await this.db.prepare('DELETE FROM user_keyword_exclusions').run();
+    await this.db.prepare('DELETE FROM user_profile').run();
+  }
+
   public async resetAllJobs(): Promise<void> {
     await this.db.prepare('DELETE FROM job_matches').run();
     await this.db.prepare('DELETE FROM application_status_history').run();
@@ -819,6 +850,11 @@ export class JobRadarRepository {
     await this.db.prepare('DELETE FROM search_run_sources').run();
     await this.db.prepare('DELETE FROM search_runs').run();
     await this.db.prepare('DELETE FROM jobs').run();
+  }
+
+  public async resetAllData(): Promise<void> {
+    await this.resetAllJobs();
+    await this.resetProfile();
   }
 
   public async exportAllData(): Promise<any> {

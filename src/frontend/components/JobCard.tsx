@@ -14,15 +14,28 @@ import {
   MoreHorizontal,
   Send,
   XCircle,
+  Trash2,
 } from 'lucide-react';
 
 interface JobCardProps {
   job: NormalizedJob;
   onSelectJob: (job: NormalizedJob) => void;
   onStatusChange: (jobId: string, newStatus: JobStatus) => Promise<void>;
+  onDeleteJob?: (jobId: string) => Promise<void>;
+  isSelectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (jobId: string) => void;
 }
 
-export const JobCard: React.FC<JobCardProps> = ({ job, onSelectJob, onStatusChange }) => {
+export const JobCard: React.FC<JobCardProps> = ({
+  job,
+  onSelectJob,
+  onStatusChange,
+  onDeleteJob,
+  isSelectionMode = false,
+  isSelected = false,
+  onToggleSelect,
+}) => {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const match = job.matchScore;
 
@@ -32,13 +45,33 @@ export const JobCard: React.FC<JobCardProps> = ({ job, onSelectJob, onStatusChan
   return (
     <Card
       hoverable
-      onClick={() => onSelectJob(job)}
-      className="p-4 sm:p-5 relative group border-border hover:border-accent/40"
+      onClick={() => {
+        if (isSelectionMode) {
+          onToggleSelect?.(job.id);
+        } else {
+          onSelectJob(job);
+        }
+      }}
+      className={`p-4 sm:p-5 relative group border-border hover:border-accent/40 ${
+        isSelected ? 'ring-2 ring-accent border-accent/60 bg-accent/5' : ''
+      }`}
     >
       <div className="flex flex-col gap-3">
         {/* Top Header: Company, IDs, Age, Match Pill */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
+            {/* Selection Checkbox */}
+            {isSelectionMode && (
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  onToggleSelect?.(job.id);
+                }}
+                className="w-4 h-4 rounded border-border text-accent focus:ring-accent cursor-pointer shrink-0"
+              />
+            )}
             {/* Company Avatar */}
             <div className="w-10 h-10 rounded-lg bg-surface-elevated border border-border flex items-center justify-center font-bold text-accent shrink-0 text-base shadow-xs">
               {initial}
@@ -165,6 +198,23 @@ export const JobCard: React.FC<JobCardProps> = ({ job, onSelectJob, onStatusChan
                 <XCircle className="w-3.5 h-3.5" />
                 <span>Reject</span>
               </Button>
+
+              {onDeleteJob && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={async () => {
+                    if (window.confirm(`Delete job "${job.title}" (${job.jobId || job.id.slice(0, 10)})?`)) {
+                      await onDeleteJob(job.id);
+                    }
+                  }}
+                  className="hover:text-danger text-text-muted"
+                  title="Delete job permanently"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span className="hidden xl:inline">Delete</span>
+                </Button>
+              )}
             </div>
 
             {/* Mobile overflow menu */}
@@ -197,6 +247,19 @@ export const JobCard: React.FC<JobCardProps> = ({ job, onSelectJob, onStatusChan
                   >
                     <XCircle className="w-3.5 h-3.5" /> Reject
                   </button>
+                  {onDeleteJob && (
+                    <button
+                      onClick={() => {
+                        setShowMobileMenu(false);
+                        if (window.confirm(`Delete job "${job.title}"?`)) {
+                          onDeleteJob(job.id);
+                        }
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 text-xs text-danger hover:bg-danger/10 rounded flex items-center gap-1.5 border-t border-border mt-0.5 pt-1.5"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete Job
+                    </button>
+                  )}
                 </div>
               )}
             </div>

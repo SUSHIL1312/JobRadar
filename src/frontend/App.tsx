@@ -179,6 +179,30 @@ export const App: React.FC = () => {
     }
   };
 
+  // Delete Job Handler
+  const handleDeleteJob = async (jobId: string) => {
+    try {
+      await api.deleteJob(jobId);
+      toast('Job permanently deleted', 'success');
+      if (selectedJob?.id === jobId) setSelectedJob(null);
+      fetchJobs();
+    } catch {
+      toast('Failed to delete job', 'error');
+    }
+  };
+
+  // Bulk Delete Jobs Handler
+  const handleBulkDeleteJobs = async (jobIds: string[]) => {
+    try {
+      const res = await api.bulkDeleteJobs(jobIds);
+      toast(`${res.deleted} job(s) permanently deleted`, 'success');
+      if (selectedJob && jobIds.includes(selectedJob.id)) setSelectedJob(null);
+      fetchJobs();
+    } catch {
+      toast('Failed to delete selected jobs', 'error');
+    }
+  };
+
   // Run Search Now Action
   const handleRunSearch = async () => {
     if (isSearching) return;
@@ -256,6 +280,7 @@ export const App: React.FC = () => {
               statusCounts={statusCounts}
               onSelectJob={setSelectedJob}
               onStatusChange={handleStatusChange}
+              onDeleteJob={handleDeleteJob}
               onNavigate={(r) => {
                 setCurrentRoute(r);
                 setFilter((prev) => ({ ...prev, page: 1 }));
@@ -282,6 +307,8 @@ export const App: React.FC = () => {
               }
               onSelectJob={setSelectedJob}
               onStatusChange={handleStatusChange}
+              onDeleteJob={handleDeleteJob}
+              onBulkDeleteJobs={handleBulkDeleteJobs}
               title={
                 currentRoute === 'fresh'
                   ? 'Fresh Opportunities (<24h)'
@@ -331,6 +358,7 @@ export const App: React.FC = () => {
         job={selectedJob}
         onClose={() => setSelectedJob(null)}
         onStatusChange={handleStatusChange}
+        onDeleteJob={handleDeleteJob}
         onSaveNotes={handleSaveNotes}
         onSaveInterview={handleSaveInterview}
         onSaveOffer={handleSaveOffer}

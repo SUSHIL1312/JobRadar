@@ -23,6 +23,7 @@ interface DashboardViewProps {
   statusCounts: Record<string, number>;
   onSelectJob: (job: NormalizedJob) => void;
   onStatusChange: (jobId: string, newStatus: JobStatus) => Promise<void>;
+  onDeleteJob?: (jobId: string) => Promise<void>;
   onNavigate: (route: string) => void;
   lastRunInfo?: { finishedAt: string; jobsNew: number; matchingJobs: number };
 }
@@ -33,6 +34,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   statusCounts,
   onSelectJob,
   onStatusChange,
+  onDeleteJob,
   onNavigate,
   lastRunInfo,
 }) => {
@@ -209,6 +211,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 job={job}
                 onSelectJob={onSelectJob}
                 onStatusChange={onStatusChange}
+                onDeleteJob={onDeleteJob}
               />
             ))}
           </div>
@@ -242,6 +245,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 job={job}
                 onSelectJob={onSelectJob}
                 onStatusChange={onStatusChange}
+                onDeleteJob={onDeleteJob}
               />
             ))}
           </div>
@@ -268,6 +272,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 job={job}
                 onSelectJob={onSelectJob}
                 onStatusChange={onStatusChange}
+                onDeleteJob={onDeleteJob}
               />
             ))}
           </div>

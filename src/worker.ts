@@ -79,31 +79,55 @@ export default {
         if (url.pathname === '/api/profile' && request.method === 'GET') {
           let profile = await repo.getProfile();
           if (!profile) {
-            // If DB not yet seeded, return default baseline
+            // Clean empty template when database has no profile
             profile = {
-              id: 'default_profile',
-              fullName: 'Sushil',
-              email: 'user@example.com',
-              title: 'Senior Software Engineer (C++ / AI / Android)',
-              yearsOfExperience: 4.5,
-              currentRole: 'Software Engineer',
+              id: 'user_profile_main',
+              fullName: '',
+              email: '',
+              title: '',
+              yearsOfExperience: 0,
+              currentRole: '',
               currentCompany: '',
-              skills: ['C++', 'Python', 'C#', 'Android', 'Kotlin', 'Jetpack Compose', 'Computer Vision', 'PyTorch', 'OpenGL', 'Linux'],
-              jobTitles: ['Software Engineer', 'C++ Software Engineer', 'Machine Learning Engineer', 'Computer Vision Engineer'],
-              seniorityLevels: ['mid', 'senior', 'lead', 'staff'],
-              locations: ['India', 'Remote', 'Worldwide'],
+              skills: [],
+              jobTitles: [],
+              seniorityLevels: [],
+              locations: [],
               remotePreference: 'remote_preferred',
               employmentTypes: ['full_time'],
-              minimumSalary: 2500000,
+              minimumSalary: undefined,
               salaryCurrency: 'INR',
-              preferredCompanies: ['NVIDIA', 'Adobe', 'Qualcomm', 'Google', 'Microsoft', 'Meta'],
+              preferredCompanies: [],
               excludedCompanies: [],
               keywords: [],
-              excludedKeywords: ['sales', 'unpaid', 'intern'],
-              enabledSources: ['mock', 'greenhouse', 'lever', 'remotive'],
+              excludedKeywords: [],
+              enabledSources: ['greenhouse', 'lever', 'remotive'],
             };
           }
           return jsonResponse({ success: true, data: profile });
+        }
+
+        // --- POST /api/profile/reset ---
+        if (url.pathname === '/api/profile/reset' && request.method === 'POST') {
+          const body = (await request.json().catch(() => ({}))) as { password?: string };
+          const providedPassword = (body.password || '').trim();
+
+          // Validate password / confirmation
+          if (env.AUTH_SECRET && env.AUTH_SECRET.trim().length > 0) {
+            if (providedPassword !== env.AUTH_SECRET.trim()) {
+              return jsonResponse({ success: false, error: { code: 'UNAUTHORIZED', message: 'Incorrect authentication password' } }, 401);
+            }
+          } else {
+            // If no AUTH_SECRET is configured, accept "RESET", "CLEAR", or non-empty string as confirmation
+            if (!providedPassword || !['RESET', 'CLEAR'].includes(providedPassword.toUpperCase())) {
+              return jsonResponse({
+                success: false,
+                error: { code: 'INVALID_CONFIRMATION', message: 'Please enter "RESET" or "CLEAR" to confirm profile reset' },
+              }, 400);
+            }
+          }
+
+          await repo.resetProfile();
+          return jsonResponse({ success: true, data: { message: 'Career profile cleared successfully' } });
         }
 
         // --- PUT /api/profile ---
@@ -143,6 +167,16 @@ export default {
           }
           await repo.markJobViewed(jobId);
           return jsonResponse({ success: true, data: job });
+        }
+
+        // --- DELETE /api/jobs/:id ---
+        if (jobMatch && request.method === 'DELETE') {
+          const jobId = jobMatch[1];
+          const deleted = await repo.deleteJob(jobId);
+          if (!deleted) {
+            return jsonResponse({ success: false, error: { code: 'NOT_FOUND', message: 'Job not found' } }, 404);
+          }
+          return jsonResponse({ success: true, data: { jobId, deleted: true } });
         }
 
         // --- GET /api/jobs/:id/timeline ---
@@ -199,6 +233,16 @@ export default {
             await repo.updateJobStatus(id, status);
           }
           return jsonResponse({ success: true, data: { count: jobIds.length, status } });
+        }
+
+        // --- POST /api/jobs/bulk-delete ---
+        if (url.pathname === '/api/jobs/bulk-delete' && request.method === 'POST') {
+          const { jobIds } = (await request.json().catch(() => ({}))) as { jobIds?: string[] };
+          if (!Array.isArray(jobIds) || jobIds.length === 0) {
+            return jsonResponse({ success: false, error: { code: 'BAD_REQUEST', message: 'jobIds array is required' } }, 400);
+          }
+          const count = await repo.deleteJobs(jobIds);
+          return jsonResponse({ success: true, data: { count, deleted: true } });
         }
 
         // --- GET /api/analytics ---

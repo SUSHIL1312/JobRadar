@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NormalizedJob, JobStatus, FilterState } from '../../types';
 import { FilterBar } from '../components/FilterBar';
 import { JobCard } from '../components/JobCard';
 import { Button } from '../components/ui/Button';
 import { Skeleton } from '../components/ui/Skeleton';
-import { ChevronLeft, ChevronRight, Inbox } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Inbox, CheckSquare, Square, Trash2 } from 'lucide-react';
 
 interface JobsViewProps {
   jobs: NormalizedJob[];
@@ -15,6 +15,8 @@ interface JobsViewProps {
   onResetFilter: () => void;
   onSelectJob: (job: NormalizedJob) => void;
   onStatusChange: (jobId: string, newStatus: JobStatus) => Promise<void>;
+  onDeleteJob?: (jobId: string) => Promise<void>;
+  onBulkDeleteJobs?: (jobIds: string[]) => Promise<void>;
   title?: string;
   subtitle?: string;
 }
@@ -28,19 +30,67 @@ export const JobsView: React.FC<JobsViewProps> = ({
   onResetFilter,
   onSelectJob,
   onStatusChange,
+  onDeleteJob,
+  onBulkDeleteJobs,
   title = 'Job Feed',
   subtitle = 'Search and filter across newly discovered opportunities.',
 }) => {
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
+
   const currentPage = filter.page || 1;
   const pageSize = filter.pageSize || 25;
   const totalPages = Math.ceil(total / pageSize) || 1;
 
+  const toggleSelectAll = () => {
+    if (selectedJobIds.size === jobs.length) {
+      setSelectedJobIds(new Set());
+    } else {
+      setSelectedJobIds(new Set(jobs.map((j) => j.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedJobIds.size === 0 || !onBulkDeleteJobs) return;
+    if (window.confirm(`Are you sure you want to permanently delete ${selectedJobIds.size} selected job(s)?`)) {
+      await onBulkDeleteJobs(Array.from(selectedJobIds));
+      setSelectedJobIds(new Set());
+      setIsSelectionMode(false);
+    }
+  };
+
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in relative pb-16">
       {/* Header */}
-      <div>
-        <h2 className="text-2xl font-extrabold text-text-main tracking-tight">{title}</h2>
-        <p className="text-xs sm:text-sm text-text-secondary mt-1">{subtitle}</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-extrabold text-text-main tracking-tight">{title}</h2>
+          <p className="text-xs sm:text-sm text-text-secondary mt-1">{subtitle}</p>
+        </div>
+
+        {jobs.length > 0 && onBulkDeleteJobs && (
+          <Button
+            size="sm"
+            variant={isSelectionMode ? 'accent' : 'outline'}
+            onClick={() => {
+              setIsSelectionMode(!isSelectionMode);
+              setSelectedJobIds(new Set());
+            }}
+            className="shrink-0"
+          >
+            {isSelectionMode ? (
+              <>
+                <Square className="w-3.5 h-3.5 mr-1.5" />
+                Done Selecting
+              </>
+            ) : (
+              <>
+                <CheckSquare className="w-3.5 h-3.5 mr-1.5" />
+                Select Jobs to Delete
+              </>
+            )}
+          </Button>
+        )}
       </div>
 
       {/* Filter Bar */}
@@ -79,8 +129,43 @@ export const JobsView: React.FC<JobsViewProps> = ({
               job={job}
               onSelectJob={onSelectJob}
               onStatusChange={onStatusChange}
+              onDeleteJob={onDeleteJob}
+              isSelectionMode={isSelectionMode}
+              isSelected={selectedJobIds.has(job.id)}
+              onToggleSelect={(id) => {
+                const next = new Set(selectedJobIds);
+                if (next.has(id)) {
+                  next.delete(id);
+                } else {
+                  next.add(id);
+                }
+                setSelectedJobIds(next);
+              }}
             />
           ))}
+        </div>
+      )}
+
+      {/* Floating Selection Action Bar */}
+      {isSelectionMode && jobs.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-surface-elevated/95 backdrop-blur-md border border-border px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-4 animate-slide-up">
+          <span className="text-xs font-semibold text-text-main">
+            {selectedJobIds.size} of {jobs.length} selected
+          </span>
+          <div className="h-4 w-px bg-border" />
+          <Button size="sm" variant="ghost" onClick={toggleSelectAll} className="text-xs">
+            {selectedJobIds.size === jobs.length ? 'Deselect All' : 'Select All on Page'}
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            disabled={selectedJobIds.size === 0}
+            onClick={handleBulkDelete}
+            className="text-xs"
+          >
+            <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+            Delete Selected ({selectedJobIds.size})
+          </Button>
         </div>
       )}
 

@@ -46,6 +46,13 @@ class ApiClient {
     });
   }
 
+  public async resetProfile(password?: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/api/profile/reset', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    });
+  }
+
   public async getJobs(filter: FilterState): Promise<{
     jobs: NormalizedJob[];
     total: number;
@@ -108,6 +115,19 @@ class ApiClient {
     return this.request<{ count: number; status: JobStatus }>('/api/jobs/bulk-status', {
       method: 'POST',
       body: JSON.stringify({ jobIds, status }),
+    });
+  }
+
+  public async deleteJob(id: string): Promise<{ jobId: string; deleted: boolean }> {
+    return this.request<{ jobId: string; deleted: boolean }>(`/api/jobs/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  public async bulkDeleteJobs(jobIds: string[]): Promise<{ count: number; deleted: boolean }> {
+    return this.request<{ count: number; deleted: boolean }>('/api/jobs/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ jobIds }),
     });
   }
 
