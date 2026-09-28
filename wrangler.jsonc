@@ -15,7 +15,7 @@
     {
       "binding": "DB",
       "database_name": "jobradar-db",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "f96722c7-734b-429b-8045-28e6dfecd172",
       "migrations_dir": "migrations"
     }
   ],
