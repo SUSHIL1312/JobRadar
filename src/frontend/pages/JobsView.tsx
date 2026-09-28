@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { NormalizedJob, JobStatus, FilterState } from '../../types';
 import { FilterBar } from '../components/FilterBar';
 import { JobCard } from '../components/JobCard';
+import { JobListItem } from '../components/JobListItem';
 import { Button } from '../components/ui/Button';
 import { Skeleton } from '../components/ui/Skeleton';
-import { ChevronLeft, ChevronRight, Inbox, CheckSquare, Square, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Inbox, CheckSquare, Square, Trash2, LayoutGrid, List } from 'lucide-react';
 
 interface JobsViewProps {
   jobs: NormalizedJob[];
@@ -37,6 +38,23 @@ export const JobsView: React.FC<JobsViewProps> = ({
 }) => {
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<'cards' | 'list'>(() => {
+    try {
+      const saved = localStorage.getItem('jobradar_view_mode');
+      return (saved === 'list' || saved === 'cards') ? saved : 'cards';
+    } catch {
+      return 'cards';
+    }
+  });
+
+  const handleViewModeChange = (mode: 'cards' | 'list') => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem('jobradar_view_mode', mode);
+    } catch {
+      // ignore
+    }
+  };
 
   const currentPage = filter.page || 1;
   const pageSize = filter.pageSize || 25;
@@ -68,29 +86,62 @@ export const JobsView: React.FC<JobsViewProps> = ({
           <p className="text-xs sm:text-sm text-text-secondary mt-1">{subtitle}</p>
         </div>
 
-        {jobs.length > 0 && onBulkDeleteJobs && (
-          <Button
-            size="sm"
-            variant={isSelectionMode ? 'accent' : 'outline'}
-            onClick={() => {
-              setIsSelectionMode(!isSelectionMode);
-              setSelectedJobIds(new Set());
-            }}
-            className="shrink-0"
-          >
-            {isSelectionMode ? (
-              <>
-                <Square className="w-3.5 h-3.5 mr-1.5" />
-                Done Selecting
-              </>
-            ) : (
-              <>
-                <CheckSquare className="w-3.5 h-3.5 mr-1.5" />
-                Select Jobs to Delete
-              </>
-            )}
-          </Button>
-        )}
+        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+          {/* View Mode Toggle: Cards vs List */}
+          <div className="inline-flex items-center p-0.5 rounded-lg bg-surface-elevated border border-border">
+            <button
+              type="button"
+              onClick={() => handleViewModeChange('cards')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                viewMode === 'cards'
+                  ? 'bg-surface text-accent shadow-xs'
+                  : 'text-text-muted hover:text-text-main'
+              }`}
+              title="Cards view"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>Cards</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleViewModeChange('list')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                viewMode === 'list'
+                  ? 'bg-surface text-accent shadow-xs'
+                  : 'text-text-muted hover:text-text-main'
+              }`}
+              title="Compact list view"
+            >
+              <List className="w-3.5 h-3.5" />
+              <span>Compact List</span>
+            </button>
+          </div>
+
+          {/* Bulk Selection Toggle */}
+          {jobs.length > 0 && onBulkDeleteJobs && (
+            <Button
+              size="sm"
+              variant={isSelectionMode ? 'accent' : 'outline'}
+              onClick={() => {
+                setIsSelectionMode(!isSelectionMode);
+                setSelectedJobIds(new Set());
+              }}
+              className="shrink-0"
+            >
+              {isSelectionMode ? (
+                <>
+                  <Square className="w-3.5 h-3.5 mr-1.5" />
+                  Done Selecting
+                </>
+              ) : (
+                <>
+                  <CheckSquare className="w-3.5 h-3.5 mr-1.5" />
+                  Select to Delete
+                </>
+              )}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Filter Bar */}
@@ -103,11 +154,19 @@ export const JobsView: React.FC<JobsViewProps> = ({
 
       {/* Jobs Grid / List */}
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-48 w-full" />
-          ))}
-        </div>
+        viewMode === 'cards' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-48 w-full" />
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 w-full" />
+            ))}
+          </div>
+        )
       ) : jobs.length === 0 ? (
         <div className="p-12 text-center border border-dashed border-border rounded-2xl bg-surface-elevated/20 flex flex-col items-center justify-center space-y-3">
           <div className="w-12 h-12 rounded-full bg-surface-elevated flex items-center justify-center text-text-muted">
@@ -121,10 +180,33 @@ export const JobsView: React.FC<JobsViewProps> = ({
             Reset Filters
           </Button>
         </div>
-      ) : (
+      ) : viewMode === 'cards' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {jobs.map((job) => (
             <JobCard
+              key={job.id}
+              job={job}
+              onSelectJob={onSelectJob}
+              onStatusChange={onStatusChange}
+              onDeleteJob={onDeleteJob}
+              isSelectionMode={isSelectionMode}
+              isSelected={selectedJobIds.has(job.id)}
+              onToggleSelect={(id) => {
+                const next = new Set(selectedJobIds);
+                if (next.has(id)) {
+                  next.delete(id);
+                } else {
+                  next.add(id);
+                }
+                setSelectedJobIds(next);
+              }}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {jobs.map((job) => (
+            <JobListItem
               key={job.id}
               job={job}
               onSelectJob={onSelectJob}
