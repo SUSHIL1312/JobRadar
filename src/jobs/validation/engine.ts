@@ -94,8 +94,8 @@ export class JobValidationEngine {
       };
     }
 
-    // 2. Mock mode bypass (deterministic local testing)
-    if (job.source === 'mock' || job.applicationUrl.includes('example.com') || job.applicationUrl.includes('test.local')) {
+    // 2. Local test environment bypass (deterministic testing with example.com / test.local)
+    if (job.applicationUrl.includes('example.com') || job.applicationUrl.includes('test.local')) {
       return {
         passed: true,
         availability: 'ACTIVE',

@@ -140,7 +140,7 @@ export class JobRadarRepository {
         .map(r => r.company_name),
       keywords: [],
       excludedKeywords: (excRes.results || []).map(r => r.keyword),
-      enabledSources: ['mock', 'greenhouse', 'lever', 'remotive'],
+      enabledSources: ['greenhouse', 'lever', 'remotive', 'remoteok'],
     };
   }
 
