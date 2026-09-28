@@ -1,0 +1,12 @@
+# Local Cloudflare Worker Secrets (DO NOT commit .dev.vars to git)
+# Copy this file to .dev.vars for local development:
+# cp .dev.vars.example .dev.vars
+
+# Resend API Key for Email notifications (https://resend.com)
+RESEND_API_KEY=re_your_api_key_here
+
+# Optional: Bearer token secret to protect private API endpoints from public access
+AUTH_SECRET=your_super_secret_auth_token_here
+
+# Optional: Gemini API Key for future AI semantic features (defaults to inactive)
+GEMINI_API_KEY=

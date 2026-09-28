@@ -1,0 +1,43 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "jobradar",
+  "main": "src/worker.ts",
+  "compatibility_date": "2025-02-14",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "jobradar-db",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      // Cloudflare Cron schedules in UTC:
+      // 08:00 AM IST -> 02:30 UTC
+      "30 2 * * *",
+      // 10:00 AM IST -> 04:30 UTC
+      "30 4 * * *",
+      // 01:00 PM IST -> 07:30 UTC
+      "30 7 * * *",
+      // 05:00 PM IST -> 11:30 UTC
+      "30 11 * * *",
+      // 09:00 PM IST -> 15:30 UTC
+      "30 15 * * *"
+    ]
+  },
+  "vars": {
+    "ENVIRONMENT": "production",
+    "MOCK_SOURCES": "false",
+    "MAX_EXTERNAL_REQUESTS_PER_RUN": "40",
+    "MAX_RUNTIME_MS": "300000"
+  }
+}
