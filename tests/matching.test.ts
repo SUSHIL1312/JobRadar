@@ -82,4 +82,97 @@ describe('Deterministic Matching Engine', () => {
     expect(result.locationScore).toBe(100);
     expect(result.explanation.summary).toBeDefined();
   });
+
+  describe('Experience Compatibility (4.5 YOE Samsung Profile)', () => {
+    it('evaluates jobs requiring <= 5 years as Compatible', () => {
+      const compatibleJob: NormalizedJob = {
+        ...perfectJob,
+        minExperienceYears: 3,
+        maxExperienceYears: 5,
+      };
+      const result = calculateMatchScore(compatibleJob, mockProfile);
+      expect(result.experienceCompatibility).toBeDefined();
+      expect(result.experienceCompatibility?.status).toBe('compatible');
+      expect(result.experienceCompatibility?.label).toContain('Compatible');
+      expect(result.experienceCompatibility?.minYears).toBe(3);
+      expect(result.experienceCompatibility?.maxYears).toBe(5);
+    });
+
+    it('evaluates jobs requiring 6+ years as Reach without disqualifying or hiding them', () => {
+      const reachJob: NormalizedJob = {
+        ...perfectJob,
+        description: 'Requires extensive engineering experience and leadership.',
+        minExperienceYears: 7,
+        maxExperienceYears: 10,
+      };
+      const result = calculateMatchScore(reachJob, mockProfile);
+      expect(result.experienceCompatibility).toBeDefined();
+      expect(result.experienceCompatibility?.status).toBe('reach');
+      expect(result.experienceCompatibility?.label).toContain('Reach');
+      // Must NOT disqualify the job!
+      expect(result.overallScore).toBeGreaterThan(0);
+      expect(result.explanation.summary).not.toContain('Excluded');
+    });
+
+    it('evaluates jobs with unspecified experience as Not Specified', () => {
+      const unspecifiedJob: NormalizedJob = {
+        ...perfectJob,
+        description: 'We are seeking a C++ Engineer for our AI team.',
+        minExperienceYears: undefined,
+        maxExperienceYears: undefined,
+      };
+      const result = calculateMatchScore(unspecifiedJob, mockProfile);
+      expect(result.experienceCompatibility).toBeDefined();
+      expect(result.experienceCompatibility?.status).toBe('unspecified');
+      expect(result.experienceCompatibility?.label).toContain('Not specified');
+    });
+  });
+
+  describe('Target Company Universe & Tier Scoring', () => {
+    it('awards +15 points bonus to Tier 1 companies (NVIDIA, Google, Atlassian, etc.)', () => {
+      const tier1Job: NormalizedJob = {
+        ...perfectJob,
+        company: 'Atlassian',
+      };
+      const result = calculateMatchScore(tier1Job, mockProfile);
+      expect(result.overallScore).toBeGreaterThanOrEqual(70);
+      expect(result.explanation.summary).toContain('Tier 1 (Must-Check) target company');
+    });
+
+    it('awards +8 points bonus to Tier 2 companies (Stripe, Rippling, Coinbase, etc.)', () => {
+      const tier2Job: NormalizedJob = {
+        ...perfectJob,
+        company: 'Stripe',
+      };
+      const result = calculateMatchScore(tier2Job, mockProfile);
+      expect(result.explanation.summary).toContain('Tier 2 (High-Value) target company');
+    });
+  });
+
+  describe('Remote Priority Dimension & Compensation Protection', () => {
+    it('applies boost for remote jobs when remote priority is highest', () => {
+      const highRemoteProfile: JobSearchProfile = {
+        ...mockProfile,
+        remotePriority: 'highest',
+      };
+      const remoteJob: NormalizedJob = {
+        ...perfectJob,
+        remoteType: 'remote',
+      };
+      const result = calculateMatchScore(remoteJob, highRemoteProfile);
+      expect(result.locationScore).toBe(100);
+      expect(result.overallScore).toBeGreaterThanOrEqual(80);
+    });
+
+    it('protects jobs with undisclosed compensation (never penalizes to 0)', () => {
+      const undisclosedSalaryJob: NormalizedJob = {
+        ...perfectJob,
+        salary: undefined,
+      };
+      const result = calculateMatchScore(undisclosedSalaryJob, mockProfile);
+      expect(result.overallScore).toBeGreaterThanOrEqual(80);
+      expect(result.explanation.summary).not.toContain('Excluded');
+    });
+  });
 });
+

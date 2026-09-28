@@ -136,7 +136,12 @@ class ApiClient {
   }
 
   public async getSources() {
-    return this.request<any[]>('/api/sources');
+    return this.request<{ sources: any[]; targetCompanies: any[] }>('/api/sources');
+  }
+
+  public async getCompanies(tier?: string) {
+    const q = tier ? `?tier=${encodeURIComponent(tier)}` : '';
+    return this.request<any[]>(`/api/companies${q}`);
   }
 
   public async getSearchRuns() {

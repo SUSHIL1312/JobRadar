@@ -14,6 +14,8 @@ import {
   BackendSearchConfig,
   BackendMatchingConfig,
   BackendNotificationConfig,
+  Company,
+  ExperienceCompatibility,
 } from '../types';
 import { APP_CONFIG } from '../config';
 
@@ -63,6 +65,12 @@ export class JobRadarRepository {
         years_of_experience: number;
         current_role: string | null;
         current_company: string | null;
+        education?: string | null;
+        current_comp_base?: number | null;
+        current_comp_bonus?: number | null;
+        target_base?: number | null;
+        target_tc?: number | null;
+        remote_priority?: string | null;
         remote_preference: string;
         employment_type: string;
         min_salary: number | null;
@@ -109,6 +117,12 @@ export class JobRadarRepository {
       yearsOfExperience: row.years_of_experience,
       currentRole: row.current_role || undefined,
       currentCompany: row.current_company || undefined,
+      education: row.education || undefined,
+      currentCompensationBase: row.current_comp_base ?? undefined,
+      currentCompensationBonus: row.current_comp_bonus ?? undefined,
+      targetBase: row.target_base ?? undefined,
+      targetTc: row.target_tc ?? undefined,
+      remotePriority: (row.remote_priority as any) || 'highest',
       skills: (skillsRes.results || []).map(r => r.skill_name),
       jobTitles: (titlesRes.results || []).map(r => r.title),
       seniorityLevels: (senRes.results || []).map(r => r.seniority as Seniority),
@@ -136,8 +150,9 @@ export class JobRadarRepository {
       .prepare(
         `INSERT INTO user_profile (
           id, full_name, email, title, years_of_experience, current_role, current_company,
+          education, current_comp_base, current_comp_bonus, target_base, target_tc, remote_priority,
           remote_preference, employment_type, min_salary, salary_currency, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           full_name = excluded.full_name,
           email = excluded.email,
@@ -145,6 +160,12 @@ export class JobRadarRepository {
           years_of_experience = excluded.years_of_experience,
           current_role = excluded.current_role,
           current_company = excluded.current_company,
+          education = excluded.education,
+          current_comp_base = excluded.current_comp_base,
+          current_comp_bonus = excluded.current_comp_bonus,
+          target_base = excluded.target_base,
+          target_tc = excluded.target_tc,
+          remote_priority = excluded.remote_priority,
           remote_preference = excluded.remote_preference,
           employment_type = excluded.employment_type,
           min_salary = excluded.min_salary,
@@ -159,6 +180,12 @@ export class JobRadarRepository {
         profile.yearsOfExperience,
         profile.currentRole || null,
         profile.currentCompany || null,
+        profile.education || null,
+        profile.currentCompensationBase || null,
+        profile.currentCompensationBonus || null,
+        profile.targetBase || null,
+        profile.targetTc || null,
+        profile.remotePriority || 'highest',
         profile.remotePreference,
         profile.employmentTypes[0] || 'full_time',
         profile.minimumSalary || null,
@@ -322,6 +349,44 @@ export class JobRadarRepository {
     if (filter.company) {
       whereClauses.push('LOWER(j.company) LIKE ?');
       bindings.push(`%${filter.company.toLowerCase()}%`);
+    }
+
+    if (filter.location && filter.location !== 'ALL') {
+      const loc = filter.location.toLowerCase();
+      if (loc.includes('remote')) {
+        whereClauses.push('j.remote_type = "remote"');
+      } else {
+        whereClauses.push('(LOWER(j.location_json) LIKE ? OR LOWER(j.title) LIKE ?)');
+        bindings.push(`%${loc}%`, `%${loc}%`);
+      }
+    }
+
+    if (filter.minBaseSalary !== undefined && filter.minBaseSalary > 0) {
+      if (filter.includeUndisclosedSalary !== false) {
+        // High-Compensation Opportunity Protection: Keep undisclosed jobs
+        whereClauses.push('((j.salary_min >= ? OR j.salary_max >= ?) OR (j.salary_min IS NULL AND j.salary_max IS NULL))');
+        bindings.push(filter.minBaseSalary, filter.minBaseSalary);
+      } else {
+        whereClauses.push('(j.salary_min >= ? OR j.salary_max >= ?)');
+        bindings.push(filter.minBaseSalary, filter.minBaseSalary);
+      }
+    }
+
+    if (filter.experienceRange && filter.experienceRange !== 'all') {
+      switch (filter.experienceRange) {
+        case '1-3':
+          whereClauses.push('(j.min_experience_years IS NULL OR j.min_experience_years <= 3)');
+          break;
+        case '3-6':
+          whereClauses.push('(j.min_experience_years IS NULL OR (j.min_experience_years <= 6 AND (j.max_experience_years >= 3 OR j.max_experience_years IS NULL)))');
+          break;
+        case '5-8':
+          whereClauses.push('(j.min_experience_years IS NULL OR (j.min_experience_years <= 8 AND (j.max_experience_years >= 5 OR j.max_experience_years IS NULL)))');
+          break;
+        case '8+':
+          whereClauses.push('(j.min_experience_years >= 8 OR j.max_experience_years >= 8)');
+          break;
+      }
     }
 
     if (filter.source) {
@@ -869,6 +934,31 @@ export class JobRadarRepository {
     };
   }
 
+  public async getTargetCompanies(tier?: string): Promise<Company[]> {
+    let query = 'SELECT * FROM companies';
+    const bindings: string[] = [];
+    if (tier) {
+      query += ' WHERE tier = ?';
+      bindings.push(tier);
+    }
+    query += ' ORDER BY CASE tier WHEN "tier_1" THEN 1 WHEN "tier_2" THEN 2 ELSE 3 END, name ASC';
+
+    const res = await this.db.prepare(query).bind(...bindings).all<any>();
+    return (res.results || []).map(r => ({
+      id: r.id,
+      name: r.name,
+      domain: r.domain || undefined,
+      careerUrl: r.career_url || undefined,
+      atsType: r.ats_type || undefined,
+      atsIdentifier: r.ats_identifier || undefined,
+      priority: r.priority || 'preferred',
+      tier: (r.tier as any) || 'tier_1',
+      targetRoles: r.target_roles || undefined,
+      remoteEligible: Boolean(r.remote_eligible ?? 1),
+      enabled: Boolean(r.enabled ?? 1),
+    }));
+  }
+
   private mapRowToJob(r: any): NormalizedJob {
     let matchScore: MatchResult | undefined;
     if (r.overall_score !== null && r.overall_score !== undefined) {
@@ -885,6 +975,41 @@ export class JobRadarRepository {
         calculatedAt: r.calculated_at,
       };
     }
+
+    // Determine experience compatibility badge
+    let expCompatibility: ExperienceCompatibility | undefined = matchScore?.experienceCompatibility;
+    if (!expCompatibility) {
+      const minYears = r.min_experience_years || undefined;
+      const maxYears = r.max_experience_years || undefined;
+      const text = r.experience_text || (minYears !== undefined ? (maxYears ? `${minYears}–${maxYears} yrs` : `${minYears}+ yrs`) : undefined);
+      if (minYears !== undefined) {
+        if (minYears <= 5) {
+          expCompatibility = {
+            status: 'compatible',
+            label: `✓ Compatible (${text})`,
+            requiredText: text || 'Compatible',
+            minYears,
+            maxYears,
+          };
+        } else {
+          expCompatibility = {
+            status: 'reach',
+            label: `⚠ Reach (${text})`,
+            requiredText: text || 'Reach',
+            minYears,
+            maxYears,
+          };
+        }
+      } else {
+        expCompatibility = {
+          status: 'unspecified',
+          label: 'ℹ Exp: Not specified',
+          requiredText: 'Not specified',
+        };
+      }
+    }
+
+    const hasSalary = Boolean(r.salary_min || r.salary_max);
 
     return {
       id: r.id,
@@ -903,6 +1028,7 @@ export class JobRadarRepository {
       maxExperienceYears: r.max_experience_years || undefined,
       experienceText: r.experience_text || undefined,
       salaryPeriod: r.salary_period || 'year',
+      compensationStatus: hasSalary ? 'disclosed_base' : 'undisclosed',
       datePosted: r.date_posted || undefined,
       dateUpdated: r.date_updated || undefined,
       salaryMin: r.salary_min || undefined,
@@ -925,6 +1051,7 @@ export class JobRadarRepository {
       offerCurrency: r.offer_currency || undefined,
       viewedAt: r.viewed_at || undefined,
       matchScore,
+      experienceCompatibility: expCompatibility,
     };
   }
 }

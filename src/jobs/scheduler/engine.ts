@@ -145,6 +145,10 @@ export class JobSearchEngine {
 
       for (const job of deduplicatedBatch) {
         const match = calculateMatchScore(job, profile, matchingConfig.weights);
+        job.matchScore = match;
+        job.experienceCompatibility = match.experienceCompatibility;
+        job.compensationStatus = (job.salaryMin || job.salaryMax) ? 'disclosed_base' : 'undisclosed';
+
         if (match.overallScore >= (matchingConfig.minScoreThreshold || 50)) {
           matchingJobsCount++;
         }

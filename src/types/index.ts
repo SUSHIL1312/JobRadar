@@ -55,6 +55,12 @@ export interface JobSearchProfile {
   yearsOfExperience: number;
   currentRole?: string;
   currentCompany?: string;
+  education?: string;
+  currentCompensationBase?: number;
+  currentCompensationBonus?: number;
+  targetBase?: number;
+  targetTc?: number;
+  remotePriority?: 'highest' | 'high' | 'normal' | 'low';
   skills: string[];
   jobTitles: string[];
   seniorityLevels: Seniority[];
@@ -118,6 +124,10 @@ export interface NormalizedJob {
   salaryMax?: number;
   salaryCurrency?: string;
   salaryPeriod?: 'year' | 'month' | 'hour' | 'unknown';
+  compensationStatus?: 'disclosed_base' | 'disclosed_tc' | 'undisclosed';
+  bonusEstimated?: number;
+  equityEstimated?: number;
+  totalCompEstimated?: number;
 
   // Important dates
   datePosted?: string; // ISO 8601 UTC
@@ -142,6 +152,15 @@ export interface NormalizedJob {
   offerCurrency?: string;
   viewedAt?: string;
   matchScore?: MatchResult;
+  experienceCompatibility?: ExperienceCompatibility;
+}
+
+export interface ExperienceCompatibility {
+  status: 'compatible' | 'reach' | 'entry' | 'unspecified';
+  label: string; // e.g. "✓ Compatible (3–6 yrs)", "⚠ Reach (7–10 yrs)", "ℹ Exp: Not specified"
+  requiredText: string;
+  minYears?: number;
+  maxYears?: number;
 }
 
 export interface JobApplication {
@@ -176,6 +195,7 @@ export interface MatchResult {
   locationScore: number;
   matchingSkills: string[];
   missingSkills: string[];
+  experienceCompatibility?: ExperienceCompatibility;
   explanation: {
     titleMatch: 'strong' | 'good' | 'moderate' | 'weak';
     skillsCoverage: number; // percentage
@@ -298,6 +318,20 @@ export interface SecretStatus {
   authSecretMasked?: string | null;
 }
 
+export interface Company {
+  id: string;
+  name: string;
+  domain?: string;
+  careerUrl?: string;
+  atsType?: string;
+  atsIdentifier?: string;
+  priority: 'preferred' | 'neutral' | 'excluded';
+  tier: 'tier_1' | 'tier_2' | 'tier_3';
+  targetRoles?: string;
+  remoteEligible?: boolean;
+  enabled: boolean;
+}
+
 export interface FilterState {
   status?: JobStatus | 'ALL';
   ageHorizon?: string; // '6h', '12h', '24h', '2d', '3d', '7d', '14d', '30d', 'all'
@@ -307,6 +341,11 @@ export interface FilterState {
   source?: string;
   minScore?: number;
   searchQuery?: string; // supports "JR-2026-000184", source IDs, companies, titles, skills
+  location?: string;
+  experienceRange?: string; // 'all', '1-3', '3-6', '5-8', '8+'
+  minBaseSalary?: number;
+  minTotalComp?: number;
+  includeUndisclosedSalary?: boolean;
   sort?:
     | 'fresh_match'
     | 'newest'

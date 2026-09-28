@@ -202,6 +202,39 @@ export const ProfileView: React.FC = () => {
               />
             </div>
           </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+            <div>
+              <label className="text-xs font-semibold text-text-muted block mb-1">Current Company</label>
+              <input
+                type="text"
+                placeholder="e.g. Samsung R&D"
+                value={profile.currentCompany || ''}
+                onChange={(e) => setProfile({ ...profile, currentCompany: e.target.value })}
+                className="w-full bg-surface-elevated border border-border rounded-lg p-2.5 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-accent/40"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-text-muted block mb-1">Current Role</label>
+              <input
+                type="text"
+                placeholder="e.g. Software Engineer"
+                value={profile.currentRole || ''}
+                onChange={(e) => setProfile({ ...profile, currentRole: e.target.value })}
+                className="w-full bg-surface-elevated border border-border rounded-lg p-2.5 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-accent/40"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-text-muted block mb-1">Education Background</label>
+              <input
+                type="text"
+                placeholder="e.g. M.Tech Computer Science, IIT Guwahati"
+                value={profile.education || ''}
+                onChange={(e) => setProfile({ ...profile, education: e.target.value })}
+                className="w-full bg-surface-elevated border border-border rounded-lg p-2.5 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-accent/40"
+              />
+            </div>
+          </div>
         </div>
 
         {/* Section 2: Technical Skills */}
@@ -310,7 +343,7 @@ export const ProfileView: React.FC = () => {
             </div>
           </div>
 
-          {/* Remote Preference */}
+          {/* Remote Preference & Priority */}
           <div className="bg-surface border border-border rounded-xl p-5 space-y-3">
             <h3 className="text-sm font-bold text-text-main uppercase tracking-wider text-accent">
               Remote Work Mode
@@ -342,10 +375,38 @@ export const ProfileView: React.FC = () => {
                 </label>
               ))}
             </div>
+
+            {/* Remote Priority */}
+            <div className="pt-3 border-t border-border mt-3">
+              <label className="text-xs font-bold text-text-muted block mb-1">
+                Remote Search Priority
+              </label>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {[
+                  { value: 'highest', label: '🔥 Highest (Remote-First)' },
+                  { value: 'high', label: 'High Priority' },
+                  { value: 'normal', label: 'Normal' },
+                  { value: 'low', label: 'Low' },
+                ].map((p) => (
+                  <button
+                    key={p.value}
+                    type="button"
+                    onClick={() => setProfile({ ...profile, remotePriority: p.value as any })}
+                    className={`p-2 rounded-lg border text-left font-medium transition-colors ${
+                      (profile.remotePriority || 'highest') === p.value
+                        ? 'bg-accent/15 border-accent/40 text-accent font-bold'
+                        : 'bg-surface-elevated border-border text-text-secondary hover:text-text-main'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Section 5: Locations & Minimum Salary */}
+        {/* Section 5: Locations & Multi-Tier Compensation */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-surface border border-border rounded-xl p-5 space-y-3">
             <h3 className="text-sm font-bold text-text-main uppercase tracking-wider text-accent flex items-center gap-2">
@@ -355,7 +416,7 @@ export const ProfileView: React.FC = () => {
             <div className="flex gap-2">
               <input
                 type="text"
-                placeholder="Add location (e.g. India, Remote, Worldwide)..."
+                placeholder="Add location (e.g. India, Remote, Bengaluru)..."
                 value={newLocation}
                 onChange={(e) => setNewLocation(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && addTag('locations', newLocation, () => setNewLocation(''))}
@@ -383,17 +444,43 @@ export const ProfileView: React.FC = () => {
 
           <div className="bg-surface border border-border rounded-xl p-5 space-y-3">
             <h3 className="text-sm font-bold text-text-main uppercase tracking-wider text-accent flex items-center gap-2">
-              <DollarSign className="w-4 h-4" /> Minimum Compensation
+              <DollarSign className="w-4 h-4" /> Compensation & Strategy
             </h3>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-semibold text-text-muted block mb-1">Min Salary (Annual)</label>
+                <label className="text-xs font-semibold text-text-muted block mb-1">Target Base Salary</label>
                 <input
                   type="number"
-                  placeholder="e.g. 2500000"
-                  value={profile.minimumSalary || ''}
-                  onChange={(e) => setProfile({ ...profile, minimumSalary: parseFloat(e.target.value) || undefined })}
+                  placeholder="e.g. 4000000"
+                  value={profile.targetBase || profile.minimumSalary || ''}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value) || undefined;
+                    setProfile({ ...profile, targetBase: val, minimumSalary: val });
+                  }}
+                  className="w-full bg-surface-elevated border border-border rounded-lg p-2 text-sm text-text-main focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-text-muted block mb-1">Target Total Comp (TC)</label>
+                <input
+                  type="number"
+                  placeholder="e.g. 5000000"
+                  value={profile.targetTc || ''}
+                  onChange={(e) => setProfile({ ...profile, targetTc: parseFloat(e.target.value) || undefined })}
+                  className="w-full bg-surface-elevated border border-border rounded-lg p-2 text-sm text-text-main focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className="text-xs font-semibold text-text-muted block mb-1">Current Base</label>
+                <input
+                  type="number"
+                  placeholder="e.g. 2150000"
+                  value={profile.currentCompensationBase || ''}
+                  onChange={(e) => setProfile({ ...profile, currentCompensationBase: parseFloat(e.target.value) || undefined })}
                   className="w-full bg-surface-elevated border border-border rounded-lg p-2 text-sm text-text-main focus:outline-none"
                 />
               </div>
@@ -410,9 +497,10 @@ export const ProfileView: React.FC = () => {
                 </select>
               </div>
             </div>
-            <p className="text-[11px] text-text-muted">
-              Note: Jobs with undisclosed salaries are never hidden unless you explicitly filter for disclosed salaries.
-            </p>
+
+            <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-400">
+              <span className="font-bold">🛡️ High-Compensation Opportunity Protection Active:</span> Undisclosed salaries and high-equity packages will never be filtered out automatically.
+            </div>
           </div>
         </div>
 

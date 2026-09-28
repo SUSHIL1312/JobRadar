@@ -118,7 +118,7 @@ export const JobCard: React.FC<JobCardProps> = ({
           </h3>
         </div>
 
-        {/* Tags Row: Remote, Seniority, Experience, Salary */}
+        {/* Tags Row: Remote, Seniority, Experience Compatibility, Salary */}
         <div className="flex items-center gap-2 flex-wrap text-xs">
           <Badge variant="remote" remoteType={job.remoteType} />
           {job.seniority !== 'unknown' && (
@@ -126,15 +126,36 @@ export const JobCard: React.FC<JobCardProps> = ({
               {job.seniority}
             </span>
           )}
-          {(job.experienceText || job.minExperienceYears !== undefined) && (
-            <span className="px-2 py-0.5 rounded-full bg-surface-elevated text-text-secondary border border-border font-medium text-[11px]">
-              ⏱ {job.experienceText || `${job.minExperienceYears}${job.maxExperienceYears ? `–${job.maxExperienceYears}` : '+'} yrs exp`}
+
+          {/* Experience Compatibility Badge */}
+          {job.experienceCompatibility && job.experienceCompatibility.status !== 'unspecified' ? (
+            <span
+              className={`px-2 py-0.5 rounded-full border text-[11px] font-medium flex items-center gap-1 ${
+                job.experienceCompatibility.status === 'compatible'
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                  : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+              }`}
+              title={`Profile: 4.5 yrs. Role demands: ${job.experienceCompatibility.requiredText}`}
+            >
+              {job.experienceCompatibility.label}
             </span>
+          ) : (
+            (job.experienceText || job.minExperienceYears !== undefined) && (
+              <span className="px-2 py-0.5 rounded-full bg-surface-elevated text-text-secondary border border-border font-medium text-[11px]">
+                ⏱ {job.experienceText || `${job.minExperienceYears}${job.maxExperienceYears ? `–${job.maxExperienceYears}` : '+'} yrs exp`}
+              </span>
+            )
           )}
-          {(job.salaryMin || job.salaryMax) && (
-            <span className="px-2 py-0.5 rounded-full bg-surface-elevated text-text-secondary border border-border font-medium">
-              {formatSalary(job.salaryMin, job.salaryMax, job.salaryCurrency)}
+
+          {/* Compensation Pill: Explicit Range or Protected Undisclosed */}
+          {(job.salaryMin || job.salaryMax) ? (
+            <span className="px-2 py-0.5 rounded-full bg-surface-elevated text-text-secondary border border-border font-medium text-[11px]">
+              💰 {formatSalary(job.salaryMin, job.salaryMax, job.salaryCurrency)}
               {job.salaryPeriod && job.salaryPeriod !== 'unknown' && job.salaryPeriod !== 'year' ? `/${job.salaryPeriod === 'hour' ? 'hr' : 'mo'}` : ''}
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 rounded-full bg-surface-elevated/60 text-text-muted border border-border font-normal text-[11px]" title="High-value opportunity with undisclosed compensation">
+              💰 Undisclosed
             </span>
           )}
         </div>

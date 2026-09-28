@@ -88,6 +88,12 @@ export default {
               yearsOfExperience: 0,
               currentRole: '',
               currentCompany: '',
+              education: '',
+              currentCompensationBase: 0,
+              currentCompensationBonus: 0,
+              targetBase: 4000000,
+              targetTc: 5000000,
+              remotePriority: 'highest',
               skills: [],
               jobTitles: [],
               seniorityLevels: [],
@@ -146,6 +152,10 @@ export default {
             seniority: (url.searchParams.get('seniority') as any) || 'ALL',
             company: url.searchParams.get('company') || undefined,
             source: url.searchParams.get('source') || undefined,
+            location: url.searchParams.get('location') || undefined,
+            experienceRange: url.searchParams.get('experienceRange') || undefined,
+            minBaseSalary: url.searchParams.get('minBaseSalary') ? parseFloat(url.searchParams.get('minBaseSalary')!) : undefined,
+            includeUndisclosedSalary: url.searchParams.get('includeUndisclosedSalary') !== 'false',
             minScore: url.searchParams.get('minScore') ? parseInt(url.searchParams.get('minScore')!, 10) : undefined,
             searchQuery: url.searchParams.get('q') || undefined,
             sort: (url.searchParams.get('sort') as any) || 'fresh_match',
@@ -261,7 +271,15 @@ export default {
             priority: s.priority,
             capabilities: s.getCapabilities(),
           }));
-          return jsonResponse({ success: true, data: sources });
+          const targetCompanies = await repo.getTargetCompanies();
+          return jsonResponse({ success: true, data: { sources, targetCompanies } });
+        }
+
+        // --- GET /api/companies ---
+        if (url.pathname === '/api/companies' && request.method === 'GET') {
+          const tier = url.searchParams.get('tier') || undefined;
+          const targetCompanies = await repo.getTargetCompanies(tier);
+          return jsonResponse({ success: true, data: targetCompanies });
         }
 
         // --- GET /api/search-runs ---

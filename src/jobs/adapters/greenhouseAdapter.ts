@@ -24,8 +24,19 @@ export class GreenhouseAdapter implements JobSource {
   public enabled = true;
   public priority = 'high' as const;
 
-  // Curated list of known public tech company Greenhouse boards
-  private defaultBoards = ['stripe', 'figma', 'reddit', 'cloudflare'];
+  // Target universe companies utilizing Greenhouse public job boards
+  private defaultBoards = [
+    'cloudflare',
+    'stripe',
+    'rubrik',
+    'databricks',
+    'confluent',
+    'rippling',
+    'snowflake',
+    'coinbase',
+    'airbnb',
+    'figma',
+  ];
 
   public async search(profile: JobSearchProfile, context: SearchContext): Promise<RawJob[]> {
     const rawJobs: RawJob[] = [];

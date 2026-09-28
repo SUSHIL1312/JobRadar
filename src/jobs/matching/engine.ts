@@ -1,8 +1,22 @@
 // Deterministic Job Matching Engine
 
-import { NormalizedJob, JobSearchProfile, MatchResult, Seniority } from '../../types';
+import { NormalizedJob, JobSearchProfile, MatchResult, Seniority, ExperienceCompatibility } from '../../types';
 import { extractSkills, canonicalizeSkill } from '../normalization/skills';
 import { APP_CONFIG } from '../../config';
+
+// 30 Target Companies Universe Sets
+const TIER_1_COMPANIES = new Set([
+  'nvidia', 'google', 'microsoft', 'meta', 'apple', 'amazon',
+  'atlassian', 'uber', 'linkedin', 'adobe', 'salesforce',
+  'rubrik', 'databricks', 'cloudflare', 'qualcomm', 'amd',
+  'de shaw', 'confluent',
+]);
+
+const TIER_2_COMPANIES = new Set([
+  'stripe', 'rippling', 'airbnb', 'coinbase', 'servicenow',
+  'walmart', 'walmart global tech', 'intel', 'arm',
+  'bloomberg', 'palantir', 'snowflake', 'jane street',
+]);
 
 export function calculateMatchScore(
   job: NormalizedJob,
@@ -114,26 +128,57 @@ export function calculateMatchScore(
     seniorityMatch = true;
   }
 
-  // 4. Experience Compatibility Score (0 - 100)
+  // 4. Experience Compatibility Score & Badge Categorization
   let experienceScore = 80;
   let experienceMatch = true;
-  const expMatch = (job.description || '').match(/\b(\d+)\+?\s*(?:to\s*(\d+))?\s*(?:years|yrs)\b/i);
-  if (expMatch) {
-    const minReqYears = parseInt(expMatch[1], 10);
-    const maxReqYears = expMatch[2] ? parseInt(expMatch[2], 10) : minReqYears + 3;
+  let minReqYears = job.minExperienceYears;
+  let maxReqYears = job.maxExperienceYears;
+  let experienceText = job.experienceText;
 
-    if (profile.yearsOfExperience >= minReqYears && profile.yearsOfExperience <= maxReqYears + 2) {
+  if (minReqYears === undefined) {
+    const expMatch = (job.description || '').match(/\b(\d+)\+?\s*(?:to\s*(\d+))?\s*(?:years|yrs)\b/i);
+    if (expMatch) {
+      minReqYears = parseInt(expMatch[1], 10);
+      maxReqYears = expMatch[2] ? parseInt(expMatch[2], 10) : minReqYears + 3;
+      experienceText = `${minReqYears}${expMatch[2] ? `–${maxReqYears}` : '+'} years`;
+    }
+  }
+
+  const userYears = profile.yearsOfExperience || 4.5;
+  let expCompatibility: ExperienceCompatibility;
+
+  if (minReqYears !== undefined) {
+    const reqLabel = experienceText || (maxReqYears ? `${minReqYears}–${maxReqYears} yrs` : `${minReqYears}+ yrs`);
+    if (minReqYears <= 5) {
+      // 4.5 YOE comfortably meets requirements <= 5 years
       experienceScore = 100;
       experienceMatch = true;
-    } else if (profile.yearsOfExperience < minReqYears) {
-      const diff = minReqYears - profile.yearsOfExperience;
-      experienceScore = Math.max(20, 100 - diff * 25);
-      experienceMatch = diff <= 1.5;
+      expCompatibility = {
+        status: 'compatible',
+        label: `✓ Compatible (${reqLabel})`,
+        requiredText: reqLabel,
+        minYears: minReqYears,
+        maxYears: maxReqYears,
+      };
     } else {
-      // Overqualified slightly
-      experienceScore = 85;
-      experienceMatch = true;
+      // 6+ years required is a reach/stretch opportunity - flag it, DO NOT hide it
+      const diff = minReqYears - userYears;
+      experienceScore = Math.max(30, Math.round(90 - diff * 15));
+      experienceMatch = false;
+      expCompatibility = {
+        status: 'reach',
+        label: `⚠ Reach (${reqLabel})`,
+        requiredText: reqLabel,
+        minYears: minReqYears,
+        maxYears: maxReqYears,
+      };
     }
+  } else {
+    expCompatibility = {
+      status: 'unspecified',
+      label: 'ℹ Exp: Not specified',
+      requiredText: 'Not specified',
+    };
   }
 
   // 5. Location & Remote Compatibility Score (0 - 100)
@@ -179,10 +224,26 @@ export function calculateMatchScore(
     }
   }
 
-  // Check company preference boost
-  const isPreferredCompany = (profile.preferredCompanies || []).some(
+  // First-Class Remote Priority Multiplier (Highest / High / Normal / Low)
+  if (isRemote && (profile.remotePriority === 'highest' || profile.remotePriority === 'high')) {
+    locationScore = Math.min(100, locationScore + 10);
+  }
+
+  // Check company preference boost & 30 Target Universe Priority Tiers
+  const isTier1 = TIER_1_COMPANIES.has(companyLower) || Array.from(TIER_1_COMPANIES).some(c => companyLower.includes(c));
+  const isTier2 = TIER_2_COMPANIES.has(companyLower) || Array.from(TIER_2_COMPANIES).some(c => companyLower.includes(c));
+  const isPreferredCompany = isTier1 || isTier2 || (profile.preferredCompanies || []).some(
     p => p.toLowerCase() === companyLower || companyLower.includes(p.toLowerCase())
   );
+
+  let tierBonus = 0;
+  if (isTier1) {
+    tierBonus = 15; // 🔥🔥🔥 Tier 1 Must-Check Bonus
+  } else if (isTier2) {
+    tierBonus = 8; // 🔥🔥 Tier 2 High-Value Bonus
+  } else if (isPreferredCompany) {
+    tierBonus = APP_CONFIG.matching.preferredCompanyBonus || 10;
+  }
 
   // Weighted sum
   const weightedSum =
@@ -192,9 +253,7 @@ export function calculateMatchScore(
       experienceScore * weights.experience +
       locationScore * weights.location) / 100;
 
-  // Add preferred company bonus if applicable
-  const bonus = isPreferredCompany ? APP_CONFIG.matching.preferredCompanyBonus : 0;
-  const overallScore = Math.min(100, Math.max(0, Math.round(weightedSum + bonus)));
+  const overallScore = Math.min(100, Math.max(0, Math.round(weightedSum + tierBonus)));
 
   // Build summary message
   let summary = `${overallScore}% Profile Compatibility. `;
@@ -204,7 +263,11 @@ export function calculateMatchScore(
   if (isRemote) {
     summary += 'Fully remote opportunity. ';
   }
-  if (isPreferredCompany) {
+  if (isTier1) {
+    summary += `${job.company} is a Tier 1 (Must-Check) target company.`;
+  } else if (isTier2) {
+    summary += `${job.company} is a Tier 2 (High-Value) target company.`;
+  } else if (isPreferredCompany) {
     summary += `${job.company} is in your preferred companies.`;
   }
 
@@ -216,7 +279,8 @@ export function calculateMatchScore(
     experienceScore,
     locationScore,
     matchingSkills,
-    missingSkills: missingSkills.slice(0, 5), // top missing
+    missingSkills: missingSkills.slice(0, 5),
+    experienceCompatibility: expCompatibility,
     explanation: {
       titleMatch: titleMatchCategory,
       skillsCoverage: Math.round(skillCoverageRatio * 100),

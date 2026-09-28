@@ -100,6 +100,12 @@ export const JobListItem: React.FC<JobListItemProps> = ({
               </>
             )}
 
+            {job.sourceJobId && (
+              <span className="text-[11px] text-text-muted font-mono hidden md:inline" title="Source Job ID">
+                #{job.sourceJobId}
+              </span>
+            )}
+
             {job.seniority !== 'unknown' && (
               <>
                 <span className="hidden lg:inline">•</span>
@@ -107,21 +113,46 @@ export const JobListItem: React.FC<JobListItemProps> = ({
               </>
             )}
 
-            {(job.experienceText || job.minExperienceYears !== undefined) && (
+            {/* Experience Compatibility */}
+            {job.experienceCompatibility && job.experienceCompatibility.status !== 'unspecified' ? (
               <>
-                <span className="hidden xl:inline">•</span>
-                <span className="hidden xl:inline">
-                  ⏱ {job.experienceText || `${job.minExperienceYears}${job.maxExperienceYears ? `–${job.maxExperienceYears}` : '+'} yrs`}
+                <span className="hidden md:inline">•</span>
+                <span
+                  className={`hidden md:inline text-[11px] font-medium px-2 py-0.5 rounded-full border ${
+                    job.experienceCompatibility.status === 'compatible'
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                      : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                  }`}
+                  title={`Your experience: 4.5 yrs. Required: ${job.experienceCompatibility.requiredText}`}
+                >
+                  {job.experienceCompatibility.label}
                 </span>
               </>
+            ) : (
+              (job.experienceText || job.minExperienceYears !== undefined) && (
+                <>
+                  <span className="hidden xl:inline">•</span>
+                  <span className="hidden xl:inline">
+                    ⏱ {job.experienceText || `${job.minExperienceYears}${job.maxExperienceYears ? `–${job.maxExperienceYears}` : '+'} yrs`}
+                  </span>
+                </>
+              )
             )}
 
-            {(job.salaryMin || job.salaryMax) && (
+            {/* Salary or Protected Undisclosed Pill */}
+            {(job.salaryMin || job.salaryMax) ? (
               <>
                 <span>•</span>
                 <span className="text-success font-medium">
-                  {formatSalary(job.salaryMin, job.salaryMax, job.salaryCurrency)}
+                  💰 {formatSalary(job.salaryMin, job.salaryMax, job.salaryCurrency)}
                   {job.salaryPeriod && job.salaryPeriod !== 'unknown' && job.salaryPeriod !== 'year' ? `/${job.salaryPeriod === 'hour' ? 'hr' : 'mo'}` : ''}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="hidden sm:inline">•</span>
+                <span className="text-text-muted text-[11px] hidden sm:inline" title="High-value opportunity with undisclosed compensation">
+                  💰 Undisclosed
                 </span>
               </>
             )}
