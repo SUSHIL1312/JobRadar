@@ -97,7 +97,28 @@ export interface RawJob {
   applicationUrl: string;
   canonicalUrl?: string;
   sourceUrl?: string;
+  discoveredVia?: string;
+  canonicalSource?: string;
   rawPayload?: Record<string, unknown>;
+}
+
+export type JobAvailability = 'ACTIVE' | 'UNVERIFIED' | 'EXPIRED' | 'REMOVED' | 'INVALID';
+
+export interface ValidationCheckResult {
+  passed: boolean;
+  availability: JobAvailability;
+  verifiedAt: string;
+  httpStatus?: number;
+  reason?: string;
+  checks: {
+    titlePresent: boolean;
+    companyPresent: boolean;
+    urlValid: boolean;
+    domainAllowed: boolean;
+    httpReachable?: boolean;
+    closureDetected?: boolean;
+    contentMatch?: boolean;
+  };
 }
 
 export interface NormalizedJob {
@@ -135,11 +156,18 @@ export interface NormalizedJob {
   firstSeenAt: string;
   lastSeenAt: string;
 
-  // URLs
+  // URLs & Provenance
   applicationUrl: string;
   canonicalUrl?: string;
   sourceUrl: string;
+  discoveredVia?: string;
+  canonicalSource?: string;
   discoveredAt: string; // ISO 8601 UTC
+
+  // Verification & Availability
+  availabilityStatus: JobAvailability;
+  lastVerifiedAt?: string;
+  verificationReason?: string;
 
   fingerprint: string;
   status: JobStatus;
@@ -335,6 +363,7 @@ export interface Company {
 
 export interface FilterState {
   status?: JobStatus | 'ALL';
+  availability?: JobAvailability | 'ALL';
   ageHorizon?: string; // '6h', '12h', '24h', '2d', '3d', '7d', '14d', '30d', 'all'
   remote?: RemoteType | 'ALL';
   seniority?: Seniority | 'ALL';

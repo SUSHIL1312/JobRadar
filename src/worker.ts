@@ -6,6 +6,7 @@ import { emailService } from './notifications/email';
 import { ALL_JOB_SOURCES } from './jobs/adapters';
 import { APP_CONFIG } from './config';
 import { FilterState, JobStatus } from './types';
+import { validationEngine } from './jobs/validation/engine';
 
 export interface Env {
   DB: D1Database;
@@ -147,6 +148,7 @@ export default {
         if (url.pathname === '/api/jobs' && request.method === 'GET') {
           const filter: FilterState = {
             status: (url.searchParams.get('status') as JobStatus | 'ALL') || 'ALL',
+            availability: (url.searchParams.get('availability') as any) || undefined,
             ageHorizon: url.searchParams.get('age') || 'all',
             remote: (url.searchParams.get('remote') as any) || 'ALL',
             seniority: (url.searchParams.get('seniority') as any) || 'ALL',
@@ -165,6 +167,30 @@ export default {
 
           const result = await repo.getJobs(filter);
           return jsonResponse({ success: true, data: result });
+        }
+
+        // --- POST /api/jobs/:id/verify ---
+        const verifyMatch = url.pathname.match(/^\/api\/jobs\/([a-zA-Z0-9_-]+)\/verify$/);
+        if (verifyMatch && request.method === 'POST') {
+          const jobId = verifyMatch[1];
+          const job = await repo.getJobById(jobId);
+          if (!job) {
+            return jsonResponse({ success: false, error: { code: 'NOT_FOUND', message: 'Job not found' } }, 404);
+          }
+          const result = await validationEngine.validateJob(job);
+          await repo.updateJobAvailability(jobId, result.availability, result.reason, result.verifiedAt);
+          return jsonResponse({
+            success: true,
+            data: {
+              jobId,
+              availabilityStatus: result.availability,
+              lastVerifiedAt: result.verifiedAt,
+              verificationReason: result.reason,
+              passed: result.passed,
+              checks: result.checks,
+              httpStatus: result.httpStatus,
+            },
+          });
         }
 
         // --- GET /api/jobs/:id ---

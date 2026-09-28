@@ -16,6 +16,7 @@ import {
   BackendNotificationConfig,
   Company,
   ExperienceCompatibility,
+  JobAvailability,
 } from '../types';
 import { APP_CONFIG } from '../config';
 
@@ -337,6 +338,14 @@ export class JobRadarRepository {
       bindings.push(filter.status);
     }
 
+    if (filter.availability && filter.availability !== 'ALL') {
+      whereClauses.push('j.availability_status = ?');
+      bindings.push(filter.availability);
+    } else if (!filter.availability && (!filter.status || filter.status === 'NEW')) {
+      // By default, exclude closed/removed/invalid jobs from the fresh unreviewed feed
+      whereClauses.push('(j.availability_status IS NULL OR j.availability_status IN ("ACTIVE", "UNVERIFIED"))');
+    }
+
     if (filter.remote && filter.remote !== 'ALL') {
       whereClauses.push('j.remote_type = ?');
       bindings.push(filter.remote);
@@ -646,6 +655,20 @@ export class JobRadarRepository {
     await this.db.prepare('UPDATE jobs SET viewed_at = ? WHERE (id = ? OR job_id = ?) AND viewed_at IS NULL').bind(nowIso, jobId, jobId).run();
   }
 
+  public async updateJobAvailability(
+    jobIdOrHumanId: string,
+    availability: JobAvailability,
+    reason?: string,
+    verifiedAt?: string
+  ): Promise<boolean> {
+    const verified = verifiedAt || new Date().toISOString();
+    const res = await this.db
+      .prepare('UPDATE jobs SET availability_status = ?, last_verified_at = ?, verification_reason = ?, updated_at = ? WHERE id = ? OR job_id = ?')
+      .bind(availability, verified, reason || null, verified, jobIdOrHumanId, jobIdOrHumanId)
+      .run();
+    return Boolean(res.meta?.changes && res.meta.changes > 0);
+  }
+
   // --- 5. Batched Job Upsert with Stable Human Job ID Generation ---
   public async upsertJobs(jobsWithMatch: Array<{ job: NormalizedJob; match: MatchResult }>): Promise<{ newCount: number; duplicateCount: number }> {
     let newCount = 0;
@@ -678,8 +701,9 @@ export class JobRadarRepository {
               min_experience_years, max_experience_years, experience_text, salary_period,
               date_posted, date_updated, salary_min, salary_max, salary_currency,
               application_url, canonical_url, source_url, discovered_at, first_seen_at,
-              last_seen_at, fingerprint, status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              last_seen_at, fingerprint, status, created_at, updated_at,
+              availability_status, last_verified_at, verification_reason, discovered_via, canonical_source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .bind(
             job.id,
@@ -712,7 +736,12 @@ export class JobRadarRepository {
             job.fingerprint,
             job.status,
             nowIso,
-            nowIso
+            nowIso,
+            job.availabilityStatus || 'ACTIVE',
+            job.lastVerifiedAt || null,
+            job.verificationReason || null,
+            job.discoveredVia || job.source,
+            job.canonicalSource || null
           )
           .run();
 
@@ -1064,6 +1093,11 @@ export class JobRadarRepository {
       offerSalary: r.offer_salary || undefined,
       offerCurrency: r.offer_currency || undefined,
       viewedAt: r.viewed_at || undefined,
+      availabilityStatus: (r.availability_status as JobAvailability) || 'ACTIVE',
+      lastVerifiedAt: r.last_verified_at || undefined,
+      verificationReason: r.verification_reason || undefined,
+      discoveredVia: r.discovered_via || r.source,
+      canonicalSource: r.canonical_source || undefined,
       matchScore,
       experienceCompatibility: expCompatibility,
     };

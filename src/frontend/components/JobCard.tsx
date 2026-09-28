@@ -15,13 +15,16 @@ import {
   Send,
   XCircle,
   Trash2,
+  RefreshCw,
 } from 'lucide-react';
+import { api } from '../lib/api';
 
 interface JobCardProps {
   job: NormalizedJob;
   onSelectJob: (job: NormalizedJob) => void;
   onStatusChange: (jobId: string, newStatus: JobStatus) => Promise<void>;
   onDeleteJob?: (jobId: string) => Promise<void>;
+  onVerifyJob?: (jobId: string) => Promise<void>;
   isSelectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelect?: (jobId: string) => void;
@@ -32,15 +35,56 @@ export const JobCard: React.FC<JobCardProps> = ({
   onSelectJob,
   onStatusChange,
   onDeleteJob,
+  onVerifyJob,
   isSelectionMode = false,
   isSelected = false,
   onToggleSelect,
 }) => {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [localAvail, setLocalAvail] = useState(job.availabilityStatus);
   const match = job.matchScore;
 
   // Company avatar initial
   const initial = job.company.charAt(0).toUpperCase();
+
+  const handleRecheck = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isVerifying) return;
+    setIsVerifying(true);
+    try {
+      if (onVerifyJob) {
+        await onVerifyJob(job.id);
+      } else {
+        const res = await api.verifyJob(job.id);
+        setLocalAvail(res.availabilityStatus);
+      }
+    } catch (err) {
+      console.error('Failed to verify requisition:', err);
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const getCardStatusClasses = (status: JobStatus) => {
+    switch (status) {
+      case 'APPLIED':
+        return 'bg-blue-500/[0.04] border-blue-500/35 hover:border-blue-400/60 shadow-[0_0_15px_rgba(59,130,246,0.06)]';
+      case 'REJECTED':
+        return 'bg-rose-500/[0.03] border-rose-500/30 hover:border-rose-400/50 opacity-80';
+      case 'SELECTED':
+        return 'bg-purple-500/[0.04] border-purple-500/35 hover:border-purple-400/60 shadow-[0_0_15px_rgba(168,85,247,0.06)]';
+      case 'INTERVIEW':
+        return 'bg-amber-500/[0.04] border-amber-500/40 hover:border-amber-400/60 shadow-[0_0_15px_rgba(245,158,11,0.06)]';
+      case 'OFFER':
+        return 'bg-emerald-500/[0.06] border-emerald-500/50 hover:border-emerald-400/70 ring-1 ring-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.12)]';
+      case 'SAVED':
+        return 'bg-cyan-500/[0.03] border-cyan-500/30 hover:border-cyan-400/50';
+      case 'NEW':
+      default:
+        return 'bg-surface border-border hover:border-accent/40';
+    }
+  };
 
   return (
     <Card
@@ -52,7 +96,7 @@ export const JobCard: React.FC<JobCardProps> = ({
           onSelectJob(job);
         }
       }}
-      className={`p-4 sm:p-5 relative group border-border hover:border-accent/40 ${
+      className={`p-4 sm:p-5 relative group transition-all ${getCardStatusClasses(job.status)} ${
         isSelected ? 'ring-2 ring-accent border-accent/60 bg-accent/5' : ''
       }`}
     >
@@ -105,9 +149,21 @@ export const JobCard: React.FC<JobCardProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
             {match && <Badge variant="match" score={match.overallScore} />}
             <Badge variant="status" status={job.status} />
+            <div className="flex items-center gap-1">
+              <Badge variant="availability" availability={localAvail || job.availabilityStatus || 'ACTIVE'} />
+              <button
+                type="button"
+                onClick={handleRecheck}
+                disabled={isVerifying}
+                className="p-1 rounded-md hover:bg-surface-elevated text-text-muted hover:text-accent transition-colors disabled:opacity-50"
+                title="Recheck live requisition availability"
+              >
+                <RefreshCw className={`w-3 h-3 ${isVerifying ? 'animate-spin text-accent' : ''}`} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -124,6 +180,11 @@ export const JobCard: React.FC<JobCardProps> = ({
           {job.seniority !== 'unknown' && (
             <span className="px-2 py-0.5 rounded-full bg-surface-elevated text-text-secondary border border-border capitalize font-medium">
               {job.seniority}
+            </span>
+          )}
+          {job.canonicalSource && job.canonicalSource !== job.source && (
+            <span className="px-2 py-0.5 rounded-full bg-surface-elevated text-text-muted border border-border text-[11px]" title={`Canonical Requisition from ${job.canonicalSource}`}>
+              Direct: {job.canonicalSource}
             </span>
           )}
 

@@ -22,6 +22,8 @@ import {
   Copy,
   Check,
   Trash2,
+  RefreshCw,
+  ShieldCheck,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { ApplicationStatusHistory } from '../../types';
@@ -54,6 +56,31 @@ export const JobDetailDrawer: React.FC<JobDetailDrawerProps> = ({
   const [timeline, setTimeline] = useState<ApplicationStatusHistory[]>([]);
   const [loadingTimeline, setLoadingTimeline] = useState(false);
   const [copiedJobId, setCopiedJobId] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [localAvail, setLocalAvail] = useState<string | undefined>(undefined);
+  const [verificationFeedback, setVerificationFeedback] = useState<string | null>(null);
+
+  const handleRecheck = async () => {
+    if (!job || isVerifying) return;
+    setIsVerifying(true);
+    setVerificationFeedback(null);
+    try {
+      const res = await api.verifyJob(job.id);
+      job.availabilityStatus = res.availabilityStatus;
+      job.lastVerifiedAt = res.lastVerifiedAt;
+      job.verificationReason = res.verificationReason;
+      setLocalAvail(res.availabilityStatus);
+      setVerificationFeedback(
+        res.passed
+          ? `✓ Requisition verified active (${res.httpStatus ? `HTTP ${res.httpStatus}` : 'Active'})`
+          : `⚠ Status: ${res.availabilityStatus} (${res.verificationReason || 'Requisition closed or unavailable'})`
+      );
+    } catch (err: any) {
+      setVerificationFeedback(`Verification check failed: ${err.message}`);
+    } finally {
+      setIsVerifying(false);
+    }
+  };
 
   useEffect(() => {
     if (job) {
@@ -63,6 +90,8 @@ export const JobDetailDrawer: React.FC<JobDetailDrawerProps> = ({
       setOfferSalary(job.offerSalary ? String(job.offerSalary) : '');
       setActiveTab('details');
       setCopiedJobId(false);
+      setLocalAvail(job.availabilityStatus);
+      setVerificationFeedback(null);
     }
   }, [job]);
 
@@ -126,6 +155,18 @@ export const JobDetailDrawer: React.FC<JobDetailDrawerProps> = ({
               )}
               <Badge variant="remote" remoteType={job.remoteType} />
               <Badge variant="status" status={job.status} />
+              <div className="flex items-center gap-1">
+                <Badge variant="availability" availability={(localAvail as any) || job.availabilityStatus || 'ACTIVE'} />
+                <button
+                  type="button"
+                  onClick={handleRecheck}
+                  disabled={isVerifying}
+                  className="p-1 rounded hover:bg-surface-elevated text-text-muted hover:text-accent transition-colors disabled:opacity-50"
+                  title="Recheck live requisition availability"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isVerifying ? 'animate-spin text-accent' : ''}`} />
+                </button>
+              </div>
               {match && <Badge variant="match" score={match.overallScore} />}
             </div>
             <h2 className="text-xl font-bold text-text-main leading-tight tracking-tight">
@@ -267,6 +308,67 @@ export const JobDetailDrawer: React.FC<JobDetailDrawerProps> = ({
         <div className="flex-1 overflow-y-auto p-5 space-y-6">
           {activeTab === 'details' && (
             <>
+              {/* Verification & Provenance Banner */}
+              <div className="bg-surface-elevated/50 border border-border rounded-xl p-4 space-y-2.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-accent" />
+                    <span className="font-semibold text-xs text-text-main">
+                      Requisition Verification & Provenance
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={handleRecheck}
+                    disabled={isVerifying}
+                    className="text-xs"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isVerifying ? 'animate-spin text-accent' : ''}`} />
+                    <span>{isVerifying ? 'Checking...' : 'Recheck Availability'}</span>
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-xs">
+                  <div className="p-2.5 rounded-lg bg-surface border border-border">
+                    <span className="text-text-muted block text-[11px]">Availability Status</span>
+                    <div className="mt-1">
+                      <Badge variant="availability" availability={(localAvail as any) || job.availabilityStatus || 'ACTIVE'} />
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-surface border border-border">
+                    <span className="text-text-muted block text-[11px]">Last Verified</span>
+                    <span className="font-medium text-text-main mt-1 block">
+                      {job.lastVerifiedAt ? new Date(job.lastVerifiedAt).toLocaleString() : 'Pending live check'}
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-surface border border-border">
+                    <span className="text-text-muted block text-[11px]">Provenance / Origin</span>
+                    <span className="font-medium text-text-main mt-1 block truncate" title={`Discovered via ${job.discoveredVia || job.source}`}>
+                      {job.canonicalSource ? `Canonical: ${job.canonicalSource}` : `Via: ${job.discoveredVia || job.source}`}
+                    </span>
+                  </div>
+                </div>
+
+                {verificationFeedback && (
+                  <div className={`p-2 rounded-lg text-xs font-medium border ${
+                    verificationFeedback.startsWith('✓')
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+                      : 'bg-amber-500/10 text-amber-400 border-amber-500/25'
+                  }`}>
+                    {verificationFeedback}
+                  </div>
+                )}
+
+                {job.verificationReason && !verificationFeedback && (
+                  <div className="text-[11px] text-text-muted">
+                    <span className="font-medium text-text-secondary">Inspection note:</span> {job.verificationReason}
+                  </div>
+                )}
+              </div>
+
               {/* Profile Match Explanation Section */}
               {match && (
                 <div className="bg-surface-elevated/70 border border-border rounded-xl p-4 space-y-3">

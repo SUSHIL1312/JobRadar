@@ -112,20 +112,35 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         <div className="pt-3 border-t border-border grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 animate-fade-in text-xs">
           {/* Status Filter */}
           <div>
-            <label className="text-text-muted font-medium block mb-1">Status</label>
+            <label className="text-text-muted font-medium block mb-1">Application Stage</label>
             <select
               value={filter.status || 'ALL'}
               onChange={(e) => onFilterChange({ ...filter, status: e.target.value as any, page: 1 })}
               className="w-full bg-surface-elevated border border-border rounded-lg p-2 text-text-main focus:outline-none"
             >
-              <option value="ALL">All Statuses</option>
-              <option value="NEW">New</option>
+              <option value="ALL">All Stages</option>
+              <option value="NEW">New (Unreviewed)</option>
               <option value="SAVED">Saved</option>
               <option value="SELECTED">Selected</option>
               <option value="APPLIED">Applied</option>
               <option value="INTERVIEW">Interview</option>
               <option value="OFFER">Offer</option>
               <option value="REJECTED">Rejected</option>
+            </select>
+          </div>
+
+          {/* Requisition Availability Filter */}
+          <div>
+            <label className="text-text-muted font-medium block mb-1">Requisition Status</label>
+            <select
+              value={filter.availability || 'ALL'}
+              onChange={(e) => onFilterChange({ ...filter, availability: e.target.value as any, page: 1 })}
+              className="w-full bg-surface-elevated border border-border rounded-lg p-2 text-text-main focus:outline-none"
+            >
+              <option value="ALL">All (Active & Closed)</option>
+              <option value="ACTIVE">🟢 Verified Active</option>
+              <option value="UNVERIFIED">🟡 Unverified</option>
+              <option value="EXPIRED">🔴 Closed / Expired</option>
             </select>
           </div>
 

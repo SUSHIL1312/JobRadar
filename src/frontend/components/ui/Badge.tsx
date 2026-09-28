@@ -1,10 +1,11 @@
 import React from 'react';
 import { cn } from '../../lib/utils';
-import { JobStatus, RemoteType, Seniority } from '../../../types';
+import { JobStatus, RemoteType, Seniority, JobAvailability } from '../../../types';
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
-  variant?: 'default' | 'outline' | 'status' | 'match' | 'remote' | 'seniority';
+  variant?: 'default' | 'outline' | 'status' | 'match' | 'remote' | 'seniority' | 'availability';
   status?: JobStatus;
+  availability?: JobAvailability;
   remoteType?: RemoteType;
   seniority?: Seniority;
   score?: number;
@@ -14,6 +15,7 @@ export const Badge: React.FC<BadgeProps> = ({
   className,
   variant = 'default',
   status,
+  availability,
   remoteType,
   seniority,
   score,
@@ -36,6 +38,28 @@ export const Badge: React.FC<BadgeProps> = ({
     return (
       <span className={cn(baseStyles, statusStyles[status], className)} {...props}>
         {status}
+      </span>
+    );
+  }
+
+  if (variant === 'availability' && availability) {
+    const availStyles: Record<JobAvailability, string> = {
+      ACTIVE: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30',
+      UNVERIFIED: 'bg-amber-500/10 text-amber-400 border border-amber-500/30',
+      EXPIRED: 'bg-rose-500/10 text-rose-400 border border-rose-500/30',
+      REMOVED: 'bg-rose-500/10 text-rose-400 border border-rose-500/30',
+      INVALID: 'bg-amber-500/10 text-amber-400 border border-amber-500/30',
+    };
+    const availLabels: Record<JobAvailability, string> = {
+      ACTIVE: '● Verified',
+      UNVERIFIED: '○ Unverified',
+      EXPIRED: '● Closed',
+      REMOVED: '● Removed',
+      INVALID: '⚠ Invalid',
+    };
+    return (
+      <span className={cn(baseStyles, availStyles[availability], className)} {...props}>
+        {availLabels[availability] || availability}
       </span>
     );
   }

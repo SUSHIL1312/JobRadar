@@ -11,6 +11,7 @@ import {
   BackendNotificationConfig,
   SecretStatus,
   ApplicationStatusHistory,
+  JobAvailability,
 } from '../../types';
 
 class ApiClient {
@@ -61,6 +62,7 @@ class ApiClient {
   }> {
     const params = new URLSearchParams();
     if (filter.status && filter.status !== 'ALL') params.set('status', filter.status);
+    if (filter.availability && filter.availability !== 'ALL') params.set('availability', filter.availability);
     if (filter.ageHorizon && filter.ageHorizon !== 'all') params.set('age', filter.ageHorizon);
     if (filter.remote && filter.remote !== 'ALL') params.set('remote', filter.remote);
     if (filter.seniority && filter.seniority !== 'ALL') params.set('seniority', filter.seniority);
@@ -73,6 +75,20 @@ class ApiClient {
     if (filter.pageSize) params.set('pageSize', String(filter.pageSize));
 
     return this.request(`/api/jobs?${params.toString()}`);
+  }
+
+  public async verifyJob(id: string): Promise<{
+    jobId: string;
+    availabilityStatus: JobAvailability;
+    lastVerifiedAt: string;
+    verificationReason?: string;
+    passed: boolean;
+    checks?: Record<string, boolean>;
+    httpStatus?: number;
+  }> {
+    return this.request(`/api/jobs/${id}/verify`, {
+      method: 'POST',
+    });
   }
 
   public async getJobById(id: string): Promise<NormalizedJob> {

@@ -18,6 +18,7 @@ interface JobsViewProps {
   onStatusChange: (jobId: string, newStatus: JobStatus) => Promise<void>;
   onDeleteJob?: (jobId: string) => Promise<void>;
   onBulkDeleteJobs?: (jobIds: string[]) => Promise<void>;
+  onVerifyJob?: (jobId: string) => Promise<void>;
   title?: string;
   subtitle?: string;
 }
@@ -33,6 +34,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
   onStatusChange,
   onDeleteJob,
   onBulkDeleteJobs,
+  onVerifyJob,
   title = 'Job Feed',
   subtitle = 'Search and filter across newly discovered opportunities.',
 }) => {
@@ -189,6 +191,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
               onSelectJob={onSelectJob}
               onStatusChange={onStatusChange}
               onDeleteJob={onDeleteJob}
+              onVerifyJob={onVerifyJob}
               isSelectionMode={isSelectionMode}
               isSelected={selectedJobIds.has(job.id)}
               onToggleSelect={(id) => {
@@ -212,6 +215,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
               onSelectJob={onSelectJob}
               onStatusChange={onStatusChange}
               onDeleteJob={onDeleteJob}
+              onVerifyJob={onVerifyJob}
               isSelectionMode={isSelectionMode}
               isSelected={selectedJobIds.has(job.id)}
               onToggleSelect={(id) => {

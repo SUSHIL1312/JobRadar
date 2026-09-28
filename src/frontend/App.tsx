@@ -208,6 +208,45 @@ export const App: React.FC = () => {
     }
   };
 
+  // Recheck Requisition Availability Handler
+  const handleVerifyJob = async (jobId: string) => {
+    try {
+      const res = await api.verifyJob(jobId);
+      setJobs((prev) =>
+        prev.map((j) =>
+          j.id === jobId
+            ? {
+                ...j,
+                availabilityStatus: res.availabilityStatus,
+                lastVerifiedAt: res.lastVerifiedAt,
+                verificationReason: res.verificationReason,
+              }
+            : j
+        )
+      );
+      if (selectedJob && selectedJob.id === jobId) {
+        setSelectedJob((prev) =>
+          prev
+            ? {
+                ...prev,
+                availabilityStatus: res.availabilityStatus,
+                lastVerifiedAt: res.lastVerifiedAt,
+                verificationReason: res.verificationReason,
+              }
+            : null
+        );
+      }
+      toast(
+        res.passed
+          ? `Requisition verified active (${res.httpStatus ? `HTTP ${res.httpStatus}` : 'Live'})`
+          : `Requisition is ${res.availabilityStatus} (${res.verificationReason})`,
+        res.passed ? 'success' : 'info'
+      );
+    } catch (err: any) {
+      toast(`Verification check failed: ${err.message}`, 'error');
+    }
+  };
+
   // Run Search Now Action
   const handleRunSearch = async () => {
     if (isSearching) return;
@@ -339,6 +378,7 @@ export const App: React.FC = () => {
               onStatusChange={handleStatusChange}
               onDeleteJob={handleDeleteJob}
               onBulkDeleteJobs={handleBulkDeleteJobs}
+              onVerifyJob={handleVerifyJob}
               title={
                 currentRoute === 'fresh'
                   ? 'Fresh Opportunities (<24h)'

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NormalizedJob, JobStatus } from '../../types';
 import { Badge } from './ui/Badge';
 import { formatSalary } from '../lib/utils';
@@ -9,13 +9,16 @@ import {
   CheckCircle2,
   Clock,
   Trash2,
+  RefreshCw,
 } from 'lucide-react';
+import { api } from '../lib/api';
 
 interface JobListItemProps {
   job: NormalizedJob;
   onSelectJob: (job: NormalizedJob) => void;
   onStatusChange: (jobId: string, newStatus: JobStatus) => Promise<void>;
   onDeleteJob?: (jobId: string) => Promise<void>;
+  onVerifyJob?: (jobId: string) => Promise<void>;
   isSelectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelect?: (jobId: string) => void;
@@ -26,12 +29,53 @@ export const JobListItem: React.FC<JobListItemProps> = ({
   onSelectJob,
   onStatusChange,
   onDeleteJob,
+  onVerifyJob,
   isSelectionMode = false,
   isSelected = false,
   onToggleSelect,
 }) => {
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [localAvail, setLocalAvail] = useState(job.availabilityStatus);
   const match = job.matchScore;
   const initial = job.company.charAt(0).toUpperCase();
+
+  const handleRecheck = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isVerifying) return;
+    setIsVerifying(true);
+    try {
+      if (onVerifyJob) {
+        await onVerifyJob(job.id);
+      } else {
+        const res = await api.verifyJob(job.id);
+        setLocalAvail(res.availabilityStatus);
+      }
+    } catch (err) {
+      console.error('Failed to verify requisition:', err);
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const getListItemStatusClasses = (status: JobStatus) => {
+    switch (status) {
+      case 'APPLIED':
+        return 'bg-blue-500/[0.04] border-blue-500/35 hover:bg-blue-500/[0.07] border-l-4 border-l-blue-500';
+      case 'REJECTED':
+        return 'bg-rose-500/[0.03] border-rose-500/25 hover:bg-rose-500/[0.05] opacity-80 border-l-4 border-l-rose-500/60';
+      case 'SELECTED':
+        return 'bg-purple-500/[0.04] border-purple-500/35 hover:bg-purple-500/[0.07] border-l-4 border-l-purple-500';
+      case 'INTERVIEW':
+        return 'bg-amber-500/[0.04] border-amber-500/35 hover:bg-amber-500/[0.07] border-l-4 border-l-amber-500';
+      case 'OFFER':
+        return 'bg-emerald-500/[0.06] border-emerald-500/40 hover:bg-emerald-500/[0.09] ring-1 ring-emerald-500/20 border-l-4 border-l-emerald-500';
+      case 'SAVED':
+        return 'bg-cyan-500/[0.03] border-cyan-500/30 hover:bg-cyan-500/[0.06] border-l-4 border-l-cyan-500';
+      case 'NEW':
+      default:
+        return 'bg-surface hover:bg-surface-elevated/70 border-border hover:border-accent/40 border-l-4 border-l-border';
+    }
+  };
 
   return (
     <div
@@ -42,9 +86,9 @@ export const JobListItem: React.FC<JobListItemProps> = ({
           onSelectJob(job);
         }
       }}
-      className={`group flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-3.5 sm:px-4 py-3 bg-surface hover:bg-surface-elevated/70 border border-border rounded-xl transition-all cursor-pointer shadow-2xs hover:border-accent/40 ${
-        isSelected ? 'ring-2 ring-accent border-accent/60 bg-accent/5' : ''
-      }`}
+      className={`group flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-3.5 sm:px-4 py-3 rounded-xl transition-all cursor-pointer shadow-2xs ${getListItemStatusClasses(
+        job.status
+      )} ${isSelected ? 'ring-2 ring-accent border-accent/60 bg-accent/5' : ''}`}
     >
       {/* Left section: Checkbox + Avatar + Match + Job details */}
       <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
@@ -171,9 +215,19 @@ export const JobListItem: React.FC<JobListItemProps> = ({
           <span>{formatRelativeAge(job.datePosted || job.discoveredAt)}</span>
         </div>
 
-        {/* Status Badge */}
-        <div className="shrink-0">
+        {/* Status & Availability Badges */}
+        <div className="shrink-0 flex items-center gap-1.5">
           <Badge variant="status" status={job.status} />
+          <Badge variant="availability" availability={localAvail || job.availabilityStatus || 'ACTIVE'} />
+          <button
+            type="button"
+            onClick={handleRecheck}
+            disabled={isVerifying}
+            className="p-1 rounded hover:bg-surface-elevated text-text-muted hover:text-accent transition-colors disabled:opacity-50"
+            title="Recheck live requisition availability"
+          >
+            <RefreshCw className={`w-3 h-3 ${isVerifying ? 'animate-spin text-accent' : ''}`} />
+          </button>
         </div>
 
         {/* Quick Action Buttons */}

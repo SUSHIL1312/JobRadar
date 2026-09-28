@@ -13,6 +13,7 @@ import { getEnabledSources } from '../adapters';
 import { normalizeJob } from '../normalization';
 import { deduplicateJobs } from '../deduplication/fingerprint';
 import { calculateMatchScore } from '../matching/engine';
+import { validationEngine } from '../validation/engine';
 
 export class JobSearchEngine {
   constructor(private repo: JobRadarRepository) {}
@@ -179,8 +180,11 @@ export class JobSearchEngine {
         }
       }
 
+      // Validate & inspect batch (Don't Trust HTTP 200, Canonicalize URLs, Verify Requisitions)
+      const validatedBatch = await validationEngine.validateBatch(allNormalizedJobs, context);
+
       // Deduplicate batch
-      const deduplicatedBatch = deduplicateJobs(allNormalizedJobs);
+      const deduplicatedBatch = deduplicateJobs(validatedBatch);
 
       // Score jobs with deterministic matching engine using weights from D1
       const jobsWithMatches: Array<{ job: NormalizedJob; match: MatchResult }> = [];
