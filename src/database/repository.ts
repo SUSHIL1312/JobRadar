@@ -264,6 +264,7 @@ export class JobRadarRepository {
     }
     return {
       maxRuntimeMs: APP_CONFIG.search.maxRuntimeMs,
+      targetScanDurationMs: APP_CONFIG.search.targetScanDurationMs,
       maxExternalRequestsPerRun: APP_CONFIG.search.maxExternalRequestsPerRun,
       maxPagesPerSource: APP_CONFIG.search.maxPagesPerSource,
       freshnessHorizon: '7d',
@@ -788,23 +789,36 @@ export class JobRadarRepository {
           id, trigger_type, status, started_at, finished_at, duration_ms, sources_attempted,
           sources_succeeded, sources_failed, jobs_fetched, jobs_normalized, jobs_duplicates,
           jobs_new, jobs_matching, error_summary, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          status = excluded.status,
+          finished_at = excluded.finished_at,
+          duration_ms = excluded.duration_ms,
+          sources_attempted = excluded.sources_attempted,
+          sources_succeeded = excluded.sources_succeeded,
+          sources_failed = excluded.sources_failed,
+          jobs_fetched = excluded.jobs_fetched,
+          jobs_normalized = excluded.jobs_normalized,
+          jobs_duplicates = excluded.jobs_duplicates,
+          jobs_new = excluded.jobs_new,
+          jobs_matching = excluded.jobs_matching,
+          error_summary = excluded.error_summary`
       )
       .bind(
         result.runId,
         result.triggerType,
         result.status,
         result.startedAt,
-        result.finishedAt,
-        result.durationMs,
-        result.sourcesAttempted,
-        result.sourcesSucceeded,
-        result.sourcesFailed,
-        result.jobsFetched,
-        result.jobsNormalized,
-        result.jobsDuplicates,
-        result.jobsNew,
-        result.jobsMatching,
+        result.finishedAt || null,
+        result.durationMs || null,
+        result.sourcesAttempted || 0,
+        result.sourcesSucceeded || 0,
+        result.sourcesFailed || 0,
+        result.jobsFetched || 0,
+        result.jobsNormalized || 0,
+        result.jobsDuplicates || 0,
+        result.jobsNew || 0,
+        result.jobsMatching || 0,
         result.errorSummary || null,
         nowIso
       )

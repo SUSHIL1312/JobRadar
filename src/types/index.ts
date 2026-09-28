@@ -261,8 +261,8 @@ export interface SearchRunResult {
   triggerType: 'cron' | 'manual';
   status: 'RUNNING' | 'COMPLETED' | 'PARTIAL' | 'FAILED';
   startedAt: string;
-  finishedAt: string;
-  durationMs: number;
+  finishedAt?: string;
+  durationMs?: number;
   sourcesAttempted: number;
   sourcesSucceeded: number;
   sourcesFailed: number;
@@ -284,6 +284,7 @@ export interface SearchRunResult {
 
 export interface BackendSearchConfig {
   maxRuntimeMs: number;
+  targetScanDurationMs?: number;
   maxExternalRequestsPerRun: number;
   maxPagesPerSource: number;
   freshnessHorizon: string;

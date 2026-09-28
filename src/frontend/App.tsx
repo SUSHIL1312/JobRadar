@@ -87,11 +87,16 @@ export const App: React.FC = () => {
     api.getSearchRuns().then((runs) => {
       if (runs && runs.length > 0) {
         const latest = runs[0];
-        setLastRunInfo({
-          finishedAt: latest.finishedAt,
-          jobsNew: latest.jobsNew,
-          matchingJobs: latest.jobsMatching,
-        });
+        if (latest.status === 'RUNNING') {
+          setIsSearching(true);
+        }
+        if (latest.finishedAt) {
+          setLastRunInfo({
+            finishedAt: latest.finishedAt,
+            jobsNew: latest.jobsNew,
+            matchingJobs: latest.jobsMatching,
+          });
+        }
       }
     }).catch(() => {});
   }, []);
@@ -208,17 +213,42 @@ export const App: React.FC = () => {
     if (isSearching) return;
     try {
       setIsSearching(true);
-      toast('Scanning ATS sources and remote boards...', 'info');
+      toast('Starting 10–12 minute deep scan across 30 target companies...', 'info');
       const result = await api.runSearchNow();
-      toast(
-        `Search completed: ${result.jobsNew} new jobs discovered (${result.jobsMatching} strong matches).`,
-        'success'
-      );
-      fetchJobs();
+
+      if (result.status === 'RUNNING') {
+        toast('Deep scan running in background (10–12 minutes). You can continue browsing.', 'info');
+        // Start polling for completion every 20 seconds
+        const pollInterval = setInterval(async () => {
+          try {
+            const runs = await api.getSearchRuns();
+            const latest = runs[0];
+            if (latest && (latest.status === 'COMPLETED' || latest.status === 'PARTIAL')) {
+              clearInterval(pollInterval);
+              setIsSearching(false);
+              const newJobs = (latest as any).jobsNew ?? (latest as any).jobs_new ?? 0;
+              const matchingJobs = (latest as any).jobsMatching ?? (latest as any).jobs_matching ?? 0;
+              toast(
+                `Deep scan completed: ${newJobs} new jobs found (${matchingJobs} strong matches)!`,
+                'success'
+              );
+              fetchJobs();
+            }
+          } catch {
+            // Ignore poll error
+          }
+        }, 20000);
+      } else {
+        toast(
+          `Search completed: ${result.jobsNew} new jobs discovered (${result.jobsMatching} strong matches).`,
+          'success'
+        );
+        fetchJobs();
+        setIsSearching(false);
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       toast(`Search error: ${msg}`, 'error');
-    } finally {
       setIsSearching(false);
     }
   };

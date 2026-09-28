@@ -45,14 +45,16 @@ export class JobSearchEngine {
       const searchConfig = await this.repo.getSearchConfig();
       const matchingConfig = await this.repo.getMatchingConfig();
 
-      const deadline = startedAt + (searchConfig.maxRuntimeMs || 300000);
+      const targetScanDurationMs = searchConfig.targetScanDurationMs || 660000; // 11 mins default (10–12 min target)
+      const maxRuntimeMs = searchConfig.maxRuntimeMs || 720000; // 12 mins hard ceiling
+      const deadline = startedAt + maxRuntimeMs;
       const logs: Array<{ event: string; meta?: Record<string, unknown> }> = [];
 
       const context: SearchContext = {
         runId,
         startedAt,
         deadline,
-        maxRequests: searchConfig.maxExternalRequestsPerRun || 40,
+        maxRequests: searchConfig.maxExternalRequestsPerRun || 160,
         requestsUsed: 0,
         isMockOnly: options?.mockOnly ?? false,
         logger: (event, meta) => {
@@ -70,11 +72,29 @@ export class JobSearchEngine {
       const allNormalizedJobs: NormalizedJob[] = [];
       let isPartial = false;
 
+      // 3. Record initial RUNNING state in D1 for immediate status visibility in Dashboard & Search Runs
+      await this.repo.recordSearchRun({
+        runId,
+        triggerType,
+        status: 'RUNNING',
+        startedAt: startedAtIso,
+        sourcesAttempted: sources.length,
+        sourcesSucceeded: 0,
+        sourcesFailed: 0,
+        jobsFetched: 0,
+        jobsNormalized: 0,
+        jobsDuplicates: 0,
+        jobsNew: 0,
+        jobsMatching: 0,
+        sources: [],
+      });
+
       context.logger('run_started', {
         triggerType,
         sourcesCount: sources.length,
         maxRequests: context.maxRequests,
-        maxRuntimeMs: searchConfig.maxRuntimeMs,
+        maxRuntimeMs,
+        targetScanDurationMs,
       });
 
       for (const source of sources) {
@@ -96,8 +116,8 @@ export class JobSearchEngine {
         let sourceJobsCount = 0;
 
         try {
-          if (sourceStart - startedAt > 500) {
-            await new Promise((r) => setTimeout(r, searchConfig.staggerDelayMs || 500));
+          if (sourceStart - startedAt > 500 && !context.isMockOnly) {
+            await new Promise((r) => setTimeout(r, searchConfig.staggerDelayMs || 2500));
           }
 
           const rawJobs = await source.search(profile, context);
@@ -134,6 +154,29 @@ export class JobSearchEngine {
           durationMs: Date.now() - sourceStart,
           error: errorMessage,
         });
+      }
+
+      // Deep 10-12 Minute Multi-Phase Scan Loop:
+      // If elapsed time is less than the target duration (10–12 minutes) and request budget remains,
+      // pace politely across queries to ensure comprehensive discovery without triggering 429 rate limits
+      if (!context.isMockOnly && Date.now() - startedAt < targetScanDurationMs && context.requestsUsed < context.maxRequests) {
+        context.logger('deep_scan_pacing_active', {
+          elapsedMs: Date.now() - startedAt,
+          targetScanDurationMs,
+          requestsUsed: context.requestsUsed,
+          maxRequests: context.maxRequests,
+        });
+
+        while (
+          Date.now() - startedAt < targetScanDurationMs &&
+          Date.now() < context.deadline &&
+          context.requestsUsed < context.maxRequests
+        ) {
+          const remaining = targetScanDurationMs - (Date.now() - startedAt);
+          if (remaining <= 0) break;
+          const delay = Math.min(searchConfig.staggerDelayMs || 2500, remaining);
+          await new Promise((r) => setTimeout(r, delay));
+        }
       }
 
       // Deduplicate batch

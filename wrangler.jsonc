@@ -37,7 +37,7 @@
   "vars": {
     "ENVIRONMENT": "production",
     "MOCK_SOURCES": "false",
-    "MAX_EXTERNAL_REQUESTS_PER_RUN": "40",
-    "MAX_RUNTIME_MS": "300000"
+    "MAX_EXTERNAL_REQUESTS_PER_RUN": "160",
+    "MAX_RUNTIME_MS": "720000"
   }
 }

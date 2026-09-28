@@ -5,12 +5,14 @@ import { MockJobSource } from './mockSource';
 import { GreenhouseAdapter } from './greenhouseAdapter';
 import { LeverAdapter } from './leverAdapter';
 import { RemotiveAdapter } from './remotiveAdapter';
+import { RemoteOKAdapter } from './remoteokAdapter';
 
 export const ALL_JOB_SOURCES: JobSource[] = [
   new MockJobSource(),
   new GreenhouseAdapter(),
   new LeverAdapter(),
   new RemotiveAdapter(),
+  new RemoteOKAdapter(),
 ];
 
 export function getSourceById(id: string): JobSource | undefined {

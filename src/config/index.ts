@@ -7,14 +7,15 @@ export const APP_CONFIG = {
 
   // Scheduled search limits
   search: {
-    maxRuntimeMs: 300000, // 5 minutes target
-    hardDeadlineMs: 600000, // 10 minutes hard limit
-    maxExternalRequestsPerRun: 40,
-    maxPagesPerSource: 3,
-    maxJobsPerSource: 50,
+    maxRuntimeMs: 720000, // 12 minutes hard limit
+    targetScanDurationMs: 660000, // 11 minutes (10–12 minutes target scan duration)
+    hardDeadlineMs: 750000, // 12.5 minutes hard deadline
+    maxExternalRequestsPerRun: 160, // Request budget for deep multi-query scanning
+    maxPagesPerSource: 5,
+    maxJobsPerSource: 100,
     maxRetries: 2,
     requestTimeoutMs: 15000,
-    staggerDelayMs: 600, // polite pause between source requests
+    staggerDelayMs: 2500, // 2.5s polite pause between external requests (prevents 429 rate limits)
     cooldownMs: 60000, // 1 min manual run cooldown
     lockTtlMs: 900000, // 15 min lock lease
   },
@@ -40,6 +41,7 @@ export const APP_CONFIG = {
     'api.lever.co',
     'api.ashbyhq.com',
     'remotive.com',
+    'remoteok.com',
     'api.resend.com',
   ],
 

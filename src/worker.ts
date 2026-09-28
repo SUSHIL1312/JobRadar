@@ -295,16 +295,38 @@ export default {
             return jsonResponse({ success: false, error: { code: 'PROFILE_REQUIRED', message: 'Configure profile first' } }, 400);
           }
 
-          const body = (await request.json().catch(() => ({}))) as { mock?: boolean };
+          const body = (await request.json().catch(() => ({}))) as { mock?: boolean; wait?: boolean };
           const forceMock = body.mock === true || isMockMode;
 
           const engine = new JobSearchEngine(repo);
-          const result = await engine.executeRun(profile, 'manual', {
+
+          if (body.wait === true) {
+            // Synchronous run (for dev / automated testing)
+            const result = await engine.executeRun(profile, 'manual', {
+              mockOnly: forceMock,
+              emailApiKey: env.RESEND_API_KEY,
+            });
+            return jsonResponse({ success: true, data: result });
+          }
+
+          // Asynchronous 10-12 Minute Deep Run via ctx.waitUntil (prevents HTTP 524 gateway timeouts)
+          const runPromise = engine.executeRun(profile, 'manual', {
             mockOnly: forceMock,
             emailApiKey: env.RESEND_API_KEY,
+          }).catch((err) => {
+            console.error('[JobRadar:ManualRun] Background search error:', err);
           });
 
-          return jsonResponse({ success: true, data: result });
+          ctx.waitUntil(runPromise);
+
+          return jsonResponse({
+            success: true,
+            data: {
+              status: 'RUNNING',
+              message: 'Job discovery scan started in background. Running deep scan across 30 target companies and remote feeds (planned duration: 10–12 minutes).',
+              targetDurationMs: 660000,
+            },
+          }, 202);
         }
 
         // --- GET /api/export ---
@@ -428,51 +450,55 @@ export default {
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     console.log(`[JobRadar:Cron] Triggered cron schedule: ${event.cron} at ${new Date().toISOString()}`);
 
-    const repo = new JobRadarRepository(env.DB);
-    const profile = await repo.getProfile();
-    if (!profile) {
-      console.warn('[JobRadar:Cron] No profile found; aborting scheduled run.');
-      return;
-    }
-
-    const isMock = env.MOCK_SOURCES === 'true';
-    const engine = new JobSearchEngine(repo);
-
-    try {
-      const result = await engine.executeRun(profile, 'cron', {
-        mockOnly: isMock,
-        emailApiKey: env.RESEND_API_KEY,
-      });
-
-      console.log(`[JobRadar:Cron] Search completed: ${result.jobsNew} new jobs found.`);
-
-      // Send email notification based on D1 notification settings
-      const notifConfig = await repo.getNotificationConfig();
-      const recipient = notifConfig.emailRecipient || profile.email;
-      if (notifConfig.emailEnabled && env.RESEND_API_KEY && recipient && (result.jobsNew > 0 || notifConfig.notifyOnZeroJobs)) {
-        // Fetch newly discovered jobs respecting minScoreForNotification and maxJobsPerEmail
-        const filter: FilterState = {
-          status: 'NEW',
-          ageHorizon: '6h',
-          minScore: notifConfig.minScoreForNotification,
-          pageSize: notifConfig.maxJobsPerEmail || 15,
-        };
-        const { jobs } = await repo.getJobs(filter);
-
-        if (jobs.length > 0 || notifConfig.notifyOnZeroJobs) {
-          const emailRes = await emailService.sendNewJobsDigest({
-            recipient,
-            newJobs: jobs,
-            totalDiscovered: result.jobsNew,
-            apiKey: env.RESEND_API_KEY,
-          });
-
-          console.log(`[JobRadar:Cron] Email digest status: ${emailRes.success ? 'SENT' : 'FAILED'}`, emailRes.error || '');
-        }
+    const runScheduled = async () => {
+      const repo = new JobRadarRepository(env.DB);
+      const profile = await repo.getProfile();
+      if (!profile) {
+        console.warn('[JobRadar:Cron] No profile found; aborting scheduled run.');
+        return;
       }
-    } catch (err) {
-      console.error('[JobRadar:Cron] Scheduled run failed:', err);
-    }
+
+      const isMock = env.MOCK_SOURCES === 'true';
+      const engine = new JobSearchEngine(repo);
+
+      try {
+        const result = await engine.executeRun(profile, 'cron', {
+          mockOnly: isMock,
+          emailApiKey: env.RESEND_API_KEY,
+        });
+
+        console.log(`[JobRadar:Cron] Search completed: ${result.jobsNew} new jobs found.`);
+
+        // Send email notification based on D1 notification settings
+        const notifConfig = await repo.getNotificationConfig();
+        const recipient = notifConfig.emailRecipient || profile.email;
+        if (notifConfig.emailEnabled && env.RESEND_API_KEY && recipient && (result.jobsNew > 0 || notifConfig.notifyOnZeroJobs)) {
+          // Fetch newly discovered jobs respecting minScoreForNotification and maxJobsPerEmail
+          const filter: FilterState = {
+            status: 'NEW',
+            ageHorizon: '6h',
+            minScore: notifConfig.minScoreForNotification,
+            pageSize: notifConfig.maxJobsPerEmail || 15,
+          };
+          const { jobs } = await repo.getJobs(filter);
+
+          if (jobs.length > 0 || notifConfig.notifyOnZeroJobs) {
+            const emailRes = await emailService.sendNewJobsDigest({
+              recipient,
+              newJobs: jobs,
+              totalDiscovered: result.jobsNew,
+              apiKey: env.RESEND_API_KEY,
+            });
+
+            console.log(`[JobRadar:Cron] Email digest status: ${emailRes.success ? 'SENT' : 'FAILED'}`, emailRes.error || '');
+          }
+        }
+      } catch (err) {
+        console.error('[JobRadar:Cron] Scheduled run failed:', err);
+      }
+    };
+
+    ctx.waitUntil(runScheduled());
   },
 };
 

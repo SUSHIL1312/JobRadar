@@ -36,6 +36,12 @@ export class GreenhouseAdapter implements JobSource {
     'coinbase',
     'airbnb',
     'figma',
+    'adobe',
+    'janestreet',
+    'datadog',
+    'elastic',
+    'pinterest',
+    'hashicorp',
   ];
 
   public async search(profile: JobSearchProfile, context: SearchContext): Promise<RawJob[]> {

@@ -4,10 +4,12 @@ import { JobSource, RawJob, JobSearchProfile, SearchContext, SourceHealth, Sourc
 
 export class MockJobSource implements JobSource {
   public id = 'mock';
-  public name = 'JobRadar Mock Generator';
+  public name = 'JobRadar Mock Generator (Dev/Test Simulator)';
   public type = 'mock' as const;
-  public enabled = true;
-  public priority = 'high' as const;
+  // Disabled by default in production so live discovery scans only crawl real company boards & APIs.
+  // Activated only when mockOnly: true or MOCK_SOURCES=true is passed.
+  public enabled = false;
+  public priority = 'low' as const;
 
   public async search(_profile: JobSearchProfile, _context: SearchContext): Promise<RawJob[]> {
     const now = Date.now();
@@ -266,6 +268,7 @@ Required: 4+ years of PyTorch, Deep Learning, ONNX Runtime, and C#/C++ service i
       supportsDateFilter: true,
       providesExactSalary: true,
       providesFullDescription: true,
+      // 1000 req/min is an in-memory placeholder because the mock adapter executes locally in RAM in ~15ms with no network calls or external API rate limits.
       rateLimitPerMinute: 1000,
     };
   }
