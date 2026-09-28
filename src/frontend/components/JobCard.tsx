@@ -36,7 +36,7 @@ export const JobCard: React.FC<JobCardProps> = ({ job, onSelectJob, onStatusChan
       className="p-4 sm:p-5 relative group border-border hover:border-accent/40"
     >
       <div className="flex flex-col gap-3">
-        {/* Top Header: Company, Age, Match Pill */}
+        {/* Top Header: Company, IDs, Age, Match Pill */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             {/* Company Avatar */}
@@ -44,10 +44,18 @@ export const JobCard: React.FC<JobCardProps> = ({ job, onSelectJob, onStatusChan
               {initial}
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold text-text-main text-sm truncate">
                   {job.company}
                 </span>
+                <span className="font-mono text-[11px] font-medium px-1.5 py-0.2 rounded bg-surface-elevated text-accent border border-border">
+                  {job.jobId || job.id.slice(0, 12)}
+                </span>
+                {job.sourceJobId && (
+                  <span className="text-[11px] text-text-muted font-mono hidden sm:inline" title="Source Job ID">
+                    #{job.sourceJobId}
+                  </span>
+                )}
                 <span className="text-xs text-text-muted hidden sm:inline">•</span>
                 <span className="text-xs text-text-muted hidden sm:inline">{job.source}</span>
               </div>
@@ -77,7 +85,7 @@ export const JobCard: React.FC<JobCardProps> = ({ job, onSelectJob, onStatusChan
           </h3>
         </div>
 
-        {/* Tags Row: Remote, Seniority, Salary */}
+        {/* Tags Row: Remote, Seniority, Experience, Salary */}
         <div className="flex items-center gap-2 flex-wrap text-xs">
           <Badge variant="remote" remoteType={job.remoteType} />
           {job.seniority !== 'unknown' && (
@@ -85,9 +93,15 @@ export const JobCard: React.FC<JobCardProps> = ({ job, onSelectJob, onStatusChan
               {job.seniority}
             </span>
           )}
+          {(job.experienceText || job.minExperienceYears !== undefined) && (
+            <span className="px-2 py-0.5 rounded-full bg-surface-elevated text-text-secondary border border-border font-medium text-[11px]">
+              ⏱ {job.experienceText || `${job.minExperienceYears}${job.maxExperienceYears ? `–${job.maxExperienceYears}` : '+'} yrs exp`}
+            </span>
+          )}
           {(job.salaryMin || job.salaryMax) && (
             <span className="px-2 py-0.5 rounded-full bg-surface-elevated text-text-secondary border border-border font-medium">
               {formatSalary(job.salaryMin, job.salaryMax, job.salaryCurrency)}
+              {job.salaryPeriod && job.salaryPeriod !== 'unknown' && job.salaryPeriod !== 'year' ? `/${job.salaryPeriod === 'hour' ? 'hr' : 'mo'}` : ''}
             </span>
           )}
         </div>

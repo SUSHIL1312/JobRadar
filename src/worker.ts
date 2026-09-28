@@ -145,6 +145,14 @@ export default {
           return jsonResponse({ success: true, data: job });
         }
 
+        // --- GET /api/jobs/:id/timeline ---
+        const timelineMatch = url.pathname.match(/^\/api\/jobs\/([a-zA-Z0-9_-]+)\/timeline$/);
+        if (timelineMatch && request.method === 'GET') {
+          const jobId = timelineMatch[1];
+          const timeline = await repo.getApplicationTimeline(jobId);
+          return jsonResponse({ success: true, data: timeline });
+        }
+
         // --- PATCH /api/jobs/:id/status ---
         const statusMatch = url.pathname.match(/^\/api\/jobs\/([a-zA-Z0-9_-]+)\/status$/);
         if (statusMatch && request.method === 'PATCH') {
@@ -277,6 +285,58 @@ export default {
           return jsonResponse({ success: true, data: { message: 'All job data reset successfully' } });
         }
 
+        // --- GET /api/config/search ---
+        if (url.pathname === '/api/config/search' && request.method === 'GET') {
+          const config = await repo.getSearchConfig();
+          return jsonResponse({ success: true, data: config });
+        }
+
+        // --- PUT /api/config/search ---
+        if (url.pathname === '/api/config/search' && request.method === 'PUT') {
+          const body = (await request.json()) as any;
+          await repo.saveSearchConfig(body);
+          return jsonResponse({ success: true, data: { message: 'Search configuration updated successfully' } });
+        }
+
+        // --- GET /api/config/matching ---
+        if (url.pathname === '/api/config/matching' && request.method === 'GET') {
+          const config = await repo.getMatchingConfig();
+          return jsonResponse({ success: true, data: config });
+        }
+
+        // --- PUT /api/config/matching ---
+        if (url.pathname === '/api/config/matching' && request.method === 'PUT') {
+          const body = (await request.json()) as any;
+          await repo.saveMatchingConfig(body);
+          return jsonResponse({ success: true, data: { message: 'Matching weights updated successfully' } });
+        }
+
+        // --- GET /api/config/notifications ---
+        if (url.pathname === '/api/config/notifications' && request.method === 'GET') {
+          const config = await repo.getNotificationConfig();
+          return jsonResponse({ success: true, data: config });
+        }
+
+        // --- PUT /api/config/notifications ---
+        if (url.pathname === '/api/config/notifications' && request.method === 'PUT') {
+          const body = (await request.json()) as any;
+          await repo.saveNotificationConfig(body);
+          return jsonResponse({ success: true, data: { message: 'Notification settings updated successfully' } });
+        }
+
+        // --- GET /api/secrets/status ---
+        if (url.pathname === '/api/secrets/status' && request.method === 'GET') {
+          return jsonResponse({
+            success: true,
+            data: {
+              resendApiKeyConfigured: Boolean(env.RESEND_API_KEY && env.RESEND_API_KEY.trim().length > 0),
+              resendApiKeyMasked: env.RESEND_API_KEY && env.RESEND_API_KEY.trim().length > 0 ? '●●●●●●●●●●●●' : null,
+              authSecretConfigured: Boolean(env.AUTH_SECRET && env.AUTH_SECRET.trim().length > 0),
+              authSecretMasked: env.AUTH_SECRET && env.AUTH_SECRET.trim().length > 0 ? '●●●●●●●●●●●●' : null,
+            },
+          });
+        }
+
         return jsonResponse({ success: false, error: { code: 'NOT_FOUND', message: `Unknown endpoint: ${url.pathname}` } }, 404);
       } catch (err: unknown) {
         const error = err instanceof Error ? err.message : String(err);
@@ -324,20 +384,29 @@ export default {
 
       console.log(`[JobRadar:Cron] Search completed: ${result.jobsNew} new jobs found.`);
 
-      // Send email notification if new jobs discovered
-      if (result.jobsNew > 0 && env.RESEND_API_KEY && profile.email) {
-        // Fetch newly discovered jobs
-        const filter: FilterState = { status: 'NEW', ageHorizon: '6h', pageSize: 15 };
+      // Send email notification based on D1 notification settings
+      const notifConfig = await repo.getNotificationConfig();
+      const recipient = notifConfig.emailRecipient || profile.email;
+      if (notifConfig.emailEnabled && env.RESEND_API_KEY && recipient && (result.jobsNew > 0 || notifConfig.notifyOnZeroJobs)) {
+        // Fetch newly discovered jobs respecting minScoreForNotification and maxJobsPerEmail
+        const filter: FilterState = {
+          status: 'NEW',
+          ageHorizon: '6h',
+          minScore: notifConfig.minScoreForNotification,
+          pageSize: notifConfig.maxJobsPerEmail || 15,
+        };
         const { jobs } = await repo.getJobs(filter);
 
-        const emailRes = await emailService.sendNewJobsDigest({
-          recipient: profile.email,
-          newJobs: jobs,
-          totalDiscovered: result.jobsNew,
-          apiKey: env.RESEND_API_KEY,
-        });
+        if (jobs.length > 0 || notifConfig.notifyOnZeroJobs) {
+          const emailRes = await emailService.sendNewJobsDigest({
+            recipient,
+            newJobs: jobs,
+            totalDiscovered: result.jobsNew,
+            apiKey: env.RESEND_API_KEY,
+          });
 
-        console.log(`[JobRadar:Cron] Email digest status: ${emailRes.success ? 'SENT' : 'FAILED'}`, emailRes.error || '');
+          console.log(`[JobRadar:Cron] Email digest status: ${emailRes.success ? 'SENT' : 'FAILED'}`, emailRes.error || '');
+        }
       }
     } catch (err) {
       console.error('[JobRadar:Cron] Scheduled run failed:', err);

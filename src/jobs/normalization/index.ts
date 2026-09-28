@@ -4,16 +4,19 @@ import { RawJob, NormalizedJob, EmploymentType } from '../../types';
 import { cleanHtmlToText } from './text';
 import { normalizeTitle, detectSeniority } from './titles';
 import { normalizeLocation, detectRemoteType } from './locations';
-import { extractSkills } from './skills';
 import { parseDateToIso } from './dates';
+import { parseExperienceRequirements } from './experience';
 import { generateFingerprintString, hashString } from '../deduplication/fingerprint';
 
-export async function normalizeJob(raw: RawJob, targetSkills?: string[]): Promise<NormalizedJob> {
+export async function normalizeJob(raw: RawJob, _targetSkills?: string[]): Promise<NormalizedJob> {
   const title = normalizeTitle(raw.title);
   const description = cleanHtmlToText(raw.descriptionHtml || raw.descriptionText || '');
   const location = normalizeLocation(raw.location);
   const remoteType = detectRemoteType(location, title, description, raw.isRemote);
   const seniority = detectSeniority(title, description);
+
+  // Extract experience requirements
+  const exp = parseExperienceRequirements(`${title} ${description}`);
 
   // Normalize employment type
   let employmentType: EmploymentType = 'unknown';
@@ -41,8 +44,13 @@ export async function normalizeJob(raw: RawJob, targetSkills?: string[]): Promis
   const fingerprintHash = await hashString(fingerprintRaw);
   const id = `job_${fingerprintHash.slice(0, 16)}`;
 
+  // Default human-readable Job ID (will be assigned sequential JR-YYYY-XXXXXX in D1)
+  const currentYear = new Date().getFullYear();
+  const fallbackJobId = `JR-${currentYear}-${fingerprintHash.slice(0, 6).toUpperCase()}`;
+
   return {
     id,
+    jobId: fallbackJobId,
     source: raw.source,
     sourceJobId: raw.sourceJobId,
     company: raw.company.trim(),
@@ -53,11 +61,15 @@ export async function normalizeJob(raw: RawJob, targetSkills?: string[]): Promis
     remoteType,
     employmentType,
     seniority,
+    minExperienceYears: exp.minYears,
+    maxExperienceYears: exp.maxYears,
+    experienceText: exp.experienceText,
     datePosted,
     dateUpdated,
     salaryMin: raw.salaryMin && raw.salaryMin > 0 ? raw.salaryMin : undefined,
     salaryMax: raw.salaryMax && raw.salaryMax > 0 ? raw.salaryMax : undefined,
     salaryCurrency: raw.salaryCurrency || (raw.salaryMin ? 'USD' : undefined),
+    salaryPeriod: raw.salaryPeriod || 'year',
     applicationUrl: raw.applicationUrl.trim(),
     canonicalUrl: raw.canonicalUrl?.trim() || raw.applicationUrl.trim(),
     sourceUrl: raw.sourceUrl?.trim() || raw.applicationUrl.trim(),

@@ -37,6 +37,19 @@ describe('JobSearchEngine Core', () => {
       }),
       upsertJobs: vi.fn(async () => ({ newCount: 5, duplicateCount: 1 })),
       recordSearchRun: vi.fn(async () => {}),
+      getSearchConfig: vi.fn(async () => ({
+        maxRuntimeMs: 300000,
+        maxExternalRequestsPerRun: 40,
+        maxPagesPerSource: 3,
+        freshnessHorizon: '7d',
+        staggerDelayMs: 0,
+        cooldownMs: 300000,
+      })),
+      getMatchingConfig: vi.fn(async () => ({
+        weights: { title: 35, skills: 30, seniority: 10, experience: 15, location: 10 },
+        preferredCompanyBonus: 10,
+        minScoreThreshold: 40,
+      })),
     } as unknown as JobRadarRepository;
 
     const engine = new JobSearchEngine(mockRepo);

@@ -78,13 +78,35 @@ export const ApplicationTrackerView: React.FC<ApplicationTrackerViewProps> = ({
                         <span className="font-semibold text-xs text-text-main line-clamp-1">
                           {job.company}
                         </span>
-                        {job.matchScore && (
-                          <Badge variant="match" score={job.matchScore.overallScore} />
-                        )}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="font-mono text-[10px] font-semibold text-accent px-1.5 py-0.5 rounded bg-surface-elevated border border-border">
+                            {job.jobId || job.id.slice(0, 10)}
+                          </span>
+                          {job.matchScore && (
+                            <Badge variant="match" score={job.matchScore.overallScore} />
+                          )}
+                        </div>
                       </div>
 
                       <div className="text-xs font-medium text-text-secondary line-clamp-2">
                         {job.title}
+                      </div>
+
+                      {/* Meta badges: Experience, Source ID, Applied Date */}
+                      <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-text-muted">
+                        {job.sourceJobId && (
+                          <span className="font-mono bg-surface-elevated px-1 rounded border border-border">
+                            #{job.sourceJobId}
+                          </span>
+                        )}
+                        {(job.experienceText || job.minExperienceYears !== undefined) && (
+                          <span>⏱ {job.experienceText || `${job.minExperienceYears}y exp`}</span>
+                        )}
+                        {job.appliedAt && (
+                          <span className="text-blue-400 font-mono">
+                            📅 {new Date(job.appliedAt).toLocaleDateString()}
+                          </span>
+                        )}
                       </div>
 
                       {/* Notes / Interview info if present */}

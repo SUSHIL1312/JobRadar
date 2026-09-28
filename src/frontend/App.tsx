@@ -346,6 +346,7 @@ export const App: React.FC = () => {
         }}
         onRunSearch={handleRunSearch}
         onToggleTheme={toggleTheme}
+        onSelectJob={(job) => setSelectedJob(job)}
       />
     </div>
   );

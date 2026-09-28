@@ -4,6 +4,7 @@ import { normalizeTitle, detectSeniority } from '../src/jobs/normalization/title
 import { extractSkills, canonicalizeSkill } from '../src/jobs/normalization/skills';
 import { normalizeLocation, detectRemoteType } from '../src/jobs/normalization/locations';
 import { parseDateToIso, formatRelativeAge } from '../src/jobs/normalization/dates';
+import { parseExperienceRequirements } from '../src/jobs/normalization/experience';
 import { generateFingerprintString, deduplicateJobs } from '../src/jobs/deduplication/fingerprint';
 import { NormalizedJob } from '../src/types';
 
@@ -59,6 +60,31 @@ describe('Job Normalization Engine', () => {
     expect(relative).toBeDefined();
 
     expect(formatRelativeAge(new Date(Date.now() - 3600 * 1000).toISOString())).toBe('1h ago');
+  });
+
+  it('accurately parses experience requirements from description text', () => {
+    const res1 = parseExperienceRequirements('Candidate must have 5+ years of software development experience with C++');
+    expect(res1.minYears).toBe(5);
+    expect(res1.maxYears).toBeUndefined();
+    expect(res1.experienceText).toBe('Requires 5+ years');
+
+    const res2 = parseExperienceRequirements('Requires 3 to 6 years of experience in Android or computer vision');
+    expect(res2.minYears).toBe(3);
+    expect(res2.maxYears).toBe(6);
+    expect(res2.experienceText).toBe('Requires 3–6 years');
+
+    const res3 = parseExperienceRequirements('Minimum 4 yrs working with Linux kernels');
+    expect(res3.minYears).toBe(4);
+    expect(res3.experienceText).toBe('Requires 4+ years');
+
+    const res4 = parseExperienceRequirements('We are looking for fresh talent, 0-2 years experience');
+    expect(res4.minYears).toBe(0);
+    expect(res4.maxYears).toBe(2);
+
+    const res5 = parseExperienceRequirements('Just general description with no specific duration mentioned.');
+    expect(res5.minYears).toBeUndefined();
+    expect(res5.maxYears).toBeUndefined();
+    expect(res5.experienceText).toBeUndefined();
   });
 });
 

@@ -20,6 +20,7 @@ export type EmploymentType =
   | 'unknown';
 
 export type Seniority =
+  | 'fresher'
   | 'entry'
   | 'junior'
   | 'mid'
@@ -86,6 +87,7 @@ export interface RawJob {
   salaryMin?: number;
   salaryMax?: number;
   salaryCurrency?: string;
+  salaryPeriod?: 'year' | 'month' | 'hour' | 'unknown';
   applicationUrl: string;
   canonicalUrl?: string;
   sourceUrl?: string;
@@ -93,9 +95,10 @@ export interface RawJob {
 }
 
 export interface NormalizedJob {
-  id: string;
+  id: string; // Database primary key (UUID-like)
+  jobId: string; // Stable human-readable JobRadar ID (e.g. JR-2026-000184)
   source: string;
-  sourceJobId?: string;
+  sourceJobId?: string; // ID from Greenhouse/Lever/etc.
   company: string;
   companyDomain?: string;
   title: string;
@@ -104,19 +107,34 @@ export interface NormalizedJob {
   remoteType: RemoteType;
   employmentType: EmploymentType;
   seniority: Seniority;
-  datePosted?: string; // ISO 8601 UTC
-  dateUpdated?: string;
+
+  // Experience requirements
+  minExperienceYears?: number;
+  maxExperienceYears?: number;
+  experienceText?: string;
+
+  // Compensation
   salaryMin?: number;
   salaryMax?: number;
   salaryCurrency?: string;
+  salaryPeriod?: 'year' | 'month' | 'hour' | 'unknown';
+
+  // Important dates
+  datePosted?: string; // ISO 8601 UTC
+  dateUpdated?: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+
+  // URLs
   applicationUrl: string;
   canonicalUrl?: string;
   sourceUrl: string;
   discoveredAt: string; // ISO 8601 UTC
-  firstSeenAt: string;
-  lastSeenAt: string;
+
   fingerprint: string;
   status: JobStatus;
+  appliedAt?: string;
+  rejectedAt?: string;
   notes?: string;
   interviewDate?: string;
   interviewRound?: string;
@@ -124,6 +142,29 @@ export interface NormalizedJob {
   offerCurrency?: string;
   viewedAt?: string;
   matchScore?: MatchResult;
+}
+
+export interface JobApplication {
+  applicationId: string;
+  jobId: string; // References internal job ID
+  humanJobId: string; // e.g. JR-2026-000184
+  status: 'selected' | 'applied' | 'interview' | 'offer' | 'rejected' | 'withdrawn';
+  appliedAt?: string;
+  applicationUrl: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApplicationStatusHistory {
+  id: string;
+  applicationId?: string;
+  jobId: string;
+  humanJobId?: string;
+  oldStatus?: string;
+  newStatus: string;
+  changedAt: string;
+  notes?: string;
 }
 
 export interface MatchResult {
@@ -221,30 +262,40 @@ export interface SearchRunResult {
   }>;
 }
 
-export interface NotificationItem {
-  id: string;
-  runId?: string;
-  type: 'email' | 'system';
-  recipient: string;
-  subject: string;
-  contentPreview?: string;
-  jobCount: number;
-  status: 'SENT' | 'FAILED' | 'SKIPPED';
-  providerMessageId?: string;
-  errorMessage?: string;
-  sentAt: string;
+export interface BackendSearchConfig {
+  maxRuntimeMs: number;
+  maxExternalRequestsPerRun: number;
+  maxPagesPerSource: number;
+  freshnessHorizon: string;
+  staggerDelayMs: number;
+  cooldownMs: number;
 }
 
-export interface CompanyRegistryItem {
-  id: string;
-  name: string;
-  domain?: string;
-  careerUrl?: string;
-  atsType?: string;
-  atsIdentifier?: string;
-  priority: 'preferred' | 'neutral' | 'excluded';
-  enabled: boolean;
-  createdAt: string;
+export interface BackendMatchingConfig {
+  weights: {
+    title: number;
+    skills: number;
+    seniority: number;
+    experience: number;
+    location: number;
+  };
+  preferredCompanyBonus: number;
+  minScoreThreshold: number;
+}
+
+export interface BackendNotificationConfig {
+  emailEnabled: boolean;
+  emailRecipient: string;
+  minScoreForNotification: number;
+  maxJobsPerEmail: number;
+  notifyOnZeroJobs: boolean;
+}
+
+export interface SecretStatus {
+  resendApiKeyConfigured: boolean;
+  resendApiKeyMasked?: string | null;
+  authSecretConfigured: boolean;
+  authSecretMasked?: string | null;
 }
 
 export interface FilterState {
@@ -255,7 +306,7 @@ export interface FilterState {
   company?: string;
   source?: string;
   minScore?: number;
-  searchQuery?: string;
+  searchQuery?: string; // supports "JR-2026-000184", source IDs, companies, titles, skills
   sort?:
     | 'fresh_match'
     | 'newest'

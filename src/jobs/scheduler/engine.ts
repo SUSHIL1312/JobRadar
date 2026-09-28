@@ -1,4 +1,4 @@
-// Core Search Engine & Orchestrator
+// Core Search Engine & Orchestrator with Dynamic D1 Configuration Source of Truth
 
 import {
   JobSearchProfile,
@@ -13,13 +13,13 @@ import { getEnabledSources } from '../adapters';
 import { normalizeJob } from '../normalization';
 import { deduplicateJobs } from '../deduplication/fingerprint';
 import { calculateMatchScore } from '../matching/engine';
-import { APP_CONFIG } from '../../config';
 
 export class JobSearchEngine {
   constructor(private repo: JobRadarRepository) {}
 
   /**
    * Executes a scheduled or manually triggered search run
+   * Loads dynamic search limits and matching weights from D1
    */
   public async executeRun(
     profile: JobSearchProfile,
@@ -33,7 +33,6 @@ export class JobSearchEngine {
     const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const startedAt = Date.now();
     const startedAtIso = new Date(startedAt).toISOString();
-    const deadline = startedAt + APP_CONFIG.search.maxRuntimeMs;
 
     // 1. Acquire distributed lock
     const lockAcquired = await this.repo.acquireLock(runId);
@@ -41,34 +40,44 @@ export class JobSearchEngine {
       throw new Error('A job search run is already in progress. Concurrent execution prevented.');
     }
 
-    const logs: Array<{ event: string; meta?: Record<string, unknown> }> = [];
-    const context: SearchContext = {
-      runId,
-      startedAt,
-      deadline,
-      maxRequests: APP_CONFIG.search.maxExternalRequestsPerRun,
-      requestsUsed: 0,
-      isMockOnly: options?.mockOnly ?? false,
-      logger: (event, meta) => {
-        logs.push({ event, meta });
-        console.log(`[JobRadar:${runId}] ${event}`, meta ? JSON.stringify(meta) : '');
-      },
-    };
-
-    const sources: JobSource[] = getEnabledSources(options?.sourceIds, context.isMockOnly);
-
-    let totalFetched = 0;
-    let sourcesSucceeded = 0;
-    let sourcesFailed = 0;
-    const sourceRunResults: SearchRunResult['sources'] = [];
-    const allNormalizedJobs: NormalizedJob[] = [];
-    let isPartial = false;
-
     try {
-      context.logger('run_started', { triggerType, sourcesCount: sources.length });
+      // 2. Load dynamic configuration directly from D1 (Backend as Source of Truth)
+      const searchConfig = await this.repo.getSearchConfig();
+      const matchingConfig = await this.repo.getMatchingConfig();
+
+      const deadline = startedAt + (searchConfig.maxRuntimeMs || 300000);
+      const logs: Array<{ event: string; meta?: Record<string, unknown> }> = [];
+
+      const context: SearchContext = {
+        runId,
+        startedAt,
+        deadline,
+        maxRequests: searchConfig.maxExternalRequestsPerRun || 40,
+        requestsUsed: 0,
+        isMockOnly: options?.mockOnly ?? false,
+        logger: (event, meta) => {
+          logs.push({ event, meta });
+          console.log(`[JobRadar:${runId}] ${event}`, meta ? JSON.stringify(meta) : '');
+        },
+      };
+
+      const sources: JobSource[] = getEnabledSources(options?.sourceIds, context.isMockOnly);
+
+      let totalFetched = 0;
+      let sourcesSucceeded = 0;
+      let sourcesFailed = 0;
+      const sourceRunResults: SearchRunResult['sources'] = [];
+      const allNormalizedJobs: NormalizedJob[] = [];
+      let isPartial = false;
+
+      context.logger('run_started', {
+        triggerType,
+        sourcesCount: sources.length,
+        maxRequests: context.maxRequests,
+        maxRuntimeMs: searchConfig.maxRuntimeMs,
+      });
 
       for (const source of sources) {
-        // Check time deadline and request budget before invoking each source
         if (Date.now() >= context.deadline) {
           isPartial = true;
           context.logger('deadline_reached', { timeRemaining: 0 });
@@ -87,9 +96,8 @@ export class JobSearchEngine {
         let sourceJobsCount = 0;
 
         try {
-          // Stagger slightly between sources to be polite
           if (sourceStart - startedAt > 500) {
-            await new Promise(r => setTimeout(r, APP_CONFIG.search.staggerDelayMs));
+            await new Promise((r) => setTimeout(r, searchConfig.staggerDelayMs || 500));
           }
 
           const rawJobs = await source.search(profile, context);
@@ -97,7 +105,6 @@ export class JobSearchEngine {
           totalFetched += rawJobs.length;
           sourcesSucceeded++;
 
-          // Normalize jobs
           for (const raw of rawJobs) {
             const normalized = await normalizeJob(raw, profile.skills);
             allNormalizedJobs.push(normalized);
@@ -112,14 +119,18 @@ export class JobSearchEngine {
           } else {
             sourceStatus = 'FAILED';
           }
-          context.logger('source_execution_failed', { sourceId: source.id, status: sourceStatus, error: errorMessage });
+          context.logger('source_execution_failed', {
+            sourceId: source.id,
+            status: sourceStatus,
+            error: errorMessage,
+          });
         }
 
         sourceRunResults.push({
           sourceId: source.id,
           status: sourceStatus,
           jobsFound: sourceJobsCount,
-          newJobs: 0, // calculated below after deduplication
+          newJobs: 0,
           durationMs: Date.now() - sourceStart,
           error: errorMessage,
         });
@@ -128,19 +139,19 @@ export class JobSearchEngine {
       // Deduplicate batch
       const deduplicatedBatch = deduplicateJobs(allNormalizedJobs);
 
-      // Score jobs with deterministic matching engine
+      // Score jobs with deterministic matching engine using weights from D1
       const jobsWithMatches: Array<{ job: NormalizedJob; match: MatchResult }> = [];
       let matchingJobsCount = 0;
 
       for (const job of deduplicatedBatch) {
-        const match = calculateMatchScore(job, profile);
-        if (match.overallScore >= 50) {
+        const match = calculateMatchScore(job, profile, matchingConfig.weights);
+        if (match.overallScore >= (matchingConfig.minScoreThreshold || 50)) {
           matchingJobsCount++;
         }
         jobsWithMatches.push({ job, match });
       }
 
-      // Persist to D1 in batch
+      // Persist to D1 in batch (assigns sequential JR-YYYY-NNNNNN Job IDs)
       const { newCount, duplicateCount } = await this.repo.upsertJobs(jobsWithMatches);
 
       const finishedAt = Date.now();
@@ -169,7 +180,6 @@ export class JobSearchEngine {
         sources: sourceRunResults,
       };
 
-      // Record run in database
       await this.repo.recordSearchRun(runResult);
 
       context.logger('run_finished', {
@@ -182,7 +192,6 @@ export class JobSearchEngine {
 
       return runResult;
     } finally {
-      // Always release lock
       await this.repo.releaseLock();
     }
   }

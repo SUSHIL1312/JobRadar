@@ -1,4 +1,4 @@
-// Cloudflare D1 Typed Database Repository
+// Cloudflare D1 Typed Database Repository with Rich Job Model and Application Tracker
 
 import {
   JobSearchProfile,
@@ -10,13 +10,47 @@ import {
   Seniority,
   RemotePreference,
   EmploymentType,
+  ApplicationStatusHistory,
+  BackendSearchConfig,
+  BackendMatchingConfig,
+  BackendNotificationConfig,
 } from '../types';
 import { APP_CONFIG } from '../config';
 
 export class JobRadarRepository {
   constructor(private db: D1Database) {}
 
-  // 1. User Profile
+  // --- 0. Atomic Human-Readable Job ID Generation (JR-YYYY-NNNNNN) ---
+  public async generateNextJobId(year: number = new Date().getFullYear()): Promise<string> {
+    try {
+      // Ensure row exists for year
+      await this.db
+        .prepare('INSERT OR IGNORE INTO job_id_sequence (year, current_value) VALUES (?, 0)')
+        .bind(year)
+        .run();
+
+      // Increment atomically
+      await this.db
+        .prepare('UPDATE job_id_sequence SET current_value = current_value + 1 WHERE year = ?')
+        .bind(year)
+        .run();
+
+      const row = await this.db
+        .prepare('SELECT current_value FROM job_id_sequence WHERE year = ?')
+        .bind(year)
+        .first<{ current_value: number }>();
+
+      const seq = row?.current_value || 1;
+      const padded = String(seq).padStart(6, '0');
+      return `JR-${year}-${padded}`;
+    } catch {
+      // Fallback pseudo-random sequential if table is in migration transition
+      const rnd = Math.floor(100000 + Math.random() * 900000);
+      return `JR-${year}-${rnd}`;
+    }
+  }
+
+  // --- 1. User Profile & Backend Source of Truth ---
   public async getProfile(profileId: string = 'default_profile'): Promise<JobSearchProfile | null> {
     const row = await this.db
       .prepare('SELECT * FROM user_profile WHERE id = ?')
@@ -37,37 +71,31 @@ export class JobRadarRepository {
 
     if (!row) return null;
 
-    // Load skills
     const skillsRes = await this.db
       .prepare('SELECT skill_name FROM user_skills WHERE profile_id = ?')
       .bind(profileId)
       .all<{ skill_name: string }>();
 
-    // Load target titles
     const titlesRes = await this.db
       .prepare('SELECT title FROM user_target_titles WHERE profile_id = ?')
       .bind(profileId)
       .all<{ title: string }>();
 
-    // Load seniorities
     const senRes = await this.db
       .prepare('SELECT seniority FROM user_seniority_preferences WHERE profile_id = ?')
       .bind(profileId)
       .all<{ seniority: string }>();
 
-    // Load locations
     const locRes = await this.db
       .prepare('SELECT location FROM user_location_preferences WHERE profile_id = ?')
       .bind(profileId)
       .all<{ location: string }>();
 
-    // Load company preferences
     const compRes = await this.db
       .prepare('SELECT company_name, preference_type FROM user_company_preferences WHERE profile_id = ?')
       .bind(profileId)
       .all<{ company_name: string; preference_type: string }>();
 
-    // Load keyword exclusions
     const excRes = await this.db
       .prepare('SELECT keyword FROM user_keyword_exclusions WHERE profile_id = ?')
       .bind(profileId)
@@ -201,7 +229,73 @@ export class JobRadarRepository {
     }
   }
 
-  // 2. Jobs Querying with Filtering, Sorting, Pagination
+  // --- 2. Dynamic Backend Configuration Management in D1 ---
+  public async getSearchConfig(): Promise<BackendSearchConfig> {
+    const row = await this.db.prepare('SELECT value_json FROM user_settings WHERE key = ?').bind('search_config').first<{ value_json: string }>();
+    if (row?.value_json) {
+      return JSON.parse(row.value_json);
+    }
+    return {
+      maxRuntimeMs: APP_CONFIG.search.maxRuntimeMs,
+      maxExternalRequestsPerRun: APP_CONFIG.search.maxExternalRequestsPerRun,
+      maxPagesPerSource: APP_CONFIG.search.maxPagesPerSource,
+      freshnessHorizon: '7d',
+      staggerDelayMs: APP_CONFIG.search.staggerDelayMs,
+      cooldownMs: APP_CONFIG.search.cooldownMs,
+    };
+  }
+
+  public async saveSearchConfig(config: BackendSearchConfig): Promise<void> {
+    const nowIso = new Date().toISOString();
+    await this.db
+      .prepare('INSERT INTO user_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at')
+      .bind('search_config', JSON.stringify(config), nowIso)
+      .run();
+  }
+
+  public async getMatchingConfig(): Promise<BackendMatchingConfig> {
+    const row = await this.db.prepare('SELECT value_json FROM user_settings WHERE key = ?').bind('matching_weights').first<{ value_json: string }>();
+    if (row?.value_json) {
+      return JSON.parse(row.value_json);
+    }
+    return {
+      weights: APP_CONFIG.matching.weights,
+      preferredCompanyBonus: APP_CONFIG.matching.preferredCompanyBonus,
+      minScoreThreshold: 50,
+    };
+  }
+
+  public async saveMatchingConfig(config: BackendMatchingConfig): Promise<void> {
+    const nowIso = new Date().toISOString();
+    await this.db
+      .prepare('INSERT INTO user_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at')
+      .bind('matching_weights', JSON.stringify(config), nowIso)
+      .run();
+  }
+
+  public async getNotificationConfig(): Promise<BackendNotificationConfig> {
+    const row = await this.db.prepare('SELECT value_json FROM user_settings WHERE key = ?').bind('email_notifications').first<{ value_json: string }>();
+    if (row?.value_json) {
+      return JSON.parse(row.value_json);
+    }
+    return {
+      emailEnabled: true,
+      emailRecipient: 'user@example.com',
+      minScoreForNotification: 80,
+      maxJobsPerEmail: 15,
+      notifyOnZeroJobs: false,
+    };
+  }
+
+  public async saveNotificationConfig(config: BackendNotificationConfig): Promise<void> {
+    const nowIso = new Date().toISOString();
+    await this.db
+      .prepare('INSERT INTO user_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at')
+      .bind('email_notifications', JSON.stringify(config), nowIso)
+      .run();
+  }
+
+  // --- 3. Jobs Querying (with Human-Readable Job ID & Rich Fields) ---
   public async getJobs(filter: FilterState): Promise<{ jobs: NormalizedJob[]; total: number; page: number; pageSize: number }> {
     const page = filter.page && filter.page > 0 ? filter.page : 1;
     const pageSize = Math.min(filter.pageSize || APP_CONFIG.ui.defaultPageSize, APP_CONFIG.ui.maxPageSize);
@@ -260,15 +354,16 @@ export class JobRadarRepository {
       }
     }
 
+    // Universal Global Search (Supports Job ID "JR-...", Source ID, Company, Title, Description)
     if (filter.searchQuery && filter.searchQuery.trim().length > 0) {
       const term = `%${filter.searchQuery.trim().toLowerCase()}%`;
-      whereClauses.push('(LOWER(j.title) LIKE ? OR LOWER(j.company) LIKE ? OR LOWER(j.description) LIKE ?)');
-      bindings.push(term, term, term);
+      const exact = filter.searchQuery.trim().toUpperCase();
+      whereClauses.push('(UPPER(j.job_id) LIKE ? OR LOWER(j.source_job_id) LIKE ? OR LOWER(j.title) LIKE ? OR LOWER(j.company) LIKE ? OR LOWER(j.description) LIKE ?)');
+      bindings.push(`%${exact}%`, term, term, term, term);
     }
 
     const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
-    // Sorting
     let orderBySql = 'ORDER BY m.overall_score DESC, j.discovered_at DESC';
     switch (filter.sort) {
       case 'newest':
@@ -295,7 +390,6 @@ export class JobRadarRepository {
         break;
     }
 
-    // Count total query
     const countSql = `
       SELECT COUNT(*) as total
       FROM jobs j
@@ -305,7 +399,6 @@ export class JobRadarRepository {
     const countRow = await this.db.prepare(countSql).bind(...bindings).first<{ total: number }>();
     const total = countRow?.total || 0;
 
-    // Fetch jobs page
     const selectSql = `
       SELECT
         j.*,
@@ -328,63 +421,13 @@ export class JobRadarRepository {
 
     const jobRows = await this.db.prepare(selectSql).bind(...bindings, pageSize, offset).all<any>();
 
-    const jobs: NormalizedJob[] = (jobRows.results || []).map(r => {
-      let matchScore: MatchResult | undefined;
-      if (r.overall_score !== null && r.overall_score !== undefined) {
-        matchScore = {
-          overallScore: r.overall_score,
-          titleScore: r.title_score,
-          skillScore: r.skill_score,
-          seniorityScore: r.seniority_score,
-          experienceScore: r.experience_score,
-          locationScore: r.location_score,
-          matchingSkills: JSON.parse(r.matching_skills_json || '[]'),
-          missingSkills: JSON.parse(r.missing_skills_json || '[]'),
-          explanation: JSON.parse(r.explanation_json || '{}'),
-          calculatedAt: r.calculated_at,
-        };
-      }
-
-      return {
-        id: r.id,
-        source: r.source,
-        sourceJobId: r.source_job_id || undefined,
-        company: r.company,
-        companyDomain: r.company_domain || undefined,
-        title: r.title,
-        description: r.description || undefined,
-        location: JSON.parse(r.location_json || '[]'),
-        remoteType: r.remote_type,
-        employmentType: r.employment_type,
-        seniority: r.seniority,
-        datePosted: r.date_posted || undefined,
-        dateUpdated: r.date_updated || undefined,
-        salaryMin: r.salary_min || undefined,
-        salaryMax: r.salary_max || undefined,
-        salaryCurrency: r.salary_currency || undefined,
-        applicationUrl: r.application_url,
-        canonicalUrl: r.canonical_url || undefined,
-        sourceUrl: r.source_url,
-        discoveredAt: r.discovered_at,
-        firstSeenAt: r.first_seen_at,
-        lastSeenAt: r.last_seen_at,
-        fingerprint: r.fingerprint,
-        status: r.status as JobStatus,
-        notes: r.notes || undefined,
-        interviewDate: r.interview_date || undefined,
-        interviewRound: r.interview_round || undefined,
-        offerSalary: r.offer_salary || undefined,
-        offerCurrency: r.offer_currency || undefined,
-        viewedAt: r.viewed_at || undefined,
-        matchScore,
-      };
-    });
+    const jobs: NormalizedJob[] = (jobRows.results || []).map(r => this.mapRowToJob(r));
 
     return { jobs, total, page, pageSize };
   }
 
-  public async getJobById(jobId: string): Promise<NormalizedJob | null> {
-    const filter: FilterState = { page: 1, pageSize: 1 };
+  public async getJobById(identifier: string): Promise<NormalizedJob | null> {
+    // Supports querying by primary ID or human-readable job_id (e.g. JR-2026-000184)
     const query = `
       SELECT
         j.*,
@@ -400,152 +443,181 @@ export class JobRadarRepository {
         m.calculated_at
       FROM jobs j
       LEFT JOIN job_matches m ON j.id = m.job_id
-      WHERE j.id = ?
+      WHERE j.id = ? OR j.job_id = ?
     `;
 
-    const r = await this.db.prepare(query).bind(jobId).first<any>();
+    const r = await this.db.prepare(query).bind(identifier, identifier).first<any>();
     if (!r) return null;
-
-    let matchScore: MatchResult | undefined;
-    if (r.overall_score !== null && r.overall_score !== undefined) {
-      matchScore = {
-        overallScore: r.overall_score,
-        titleScore: r.title_score,
-        skillScore: r.skill_score,
-        seniorityScore: r.seniority_score,
-        experienceScore: r.experience_score,
-        locationScore: r.location_score,
-        matchingSkills: JSON.parse(r.matching_skills_json || '[]'),
-        missingSkills: JSON.parse(r.missing_skills_json || '[]'),
-        explanation: JSON.parse(r.explanation_json || '{}'),
-        calculatedAt: r.calculated_at,
-      };
-    }
-
-    return {
-      id: r.id,
-      source: r.source,
-      sourceJobId: r.source_job_id || undefined,
-      company: r.company,
-      companyDomain: r.company_domain || undefined,
-      title: r.title,
-      description: r.description || undefined,
-      location: JSON.parse(r.location_json || '[]'),
-      remoteType: r.remote_type,
-      employmentType: r.employment_type,
-      seniority: r.seniority,
-      datePosted: r.date_posted || undefined,
-      dateUpdated: r.date_updated || undefined,
-      salaryMin: r.salary_min || undefined,
-      salaryMax: r.salary_max || undefined,
-      salaryCurrency: r.salary_currency || undefined,
-      applicationUrl: r.application_url,
-      canonicalUrl: r.canonical_url || undefined,
-      sourceUrl: r.source_url,
-      discoveredAt: r.discovered_at,
-      firstSeenAt: r.first_seen_at,
-      lastSeenAt: r.last_seen_at,
-      fingerprint: r.fingerprint,
-      status: r.status as JobStatus,
-      notes: r.notes || undefined,
-      interviewDate: r.interview_date || undefined,
-      interviewRound: r.interview_round || undefined,
-      offerSalary: r.offer_salary || undefined,
-      offerCurrency: r.offer_currency || undefined,
-      viewedAt: r.viewed_at || undefined,
-      matchScore,
-    };
+    return this.mapRowToJob(r);
   }
 
-  public async updateJobStatus(jobId: string, newStatus: JobStatus, notes?: string): Promise<boolean> {
-    const existing = await this.db.prepare('SELECT status FROM jobs WHERE id = ?').bind(jobId).first<{ status: string }>();
+  // --- 4. Application Tracking & Status History Timeline ---
+  public async updateJobStatus(jobIdOrHumanId: string, newStatus: JobStatus, notes?: string): Promise<boolean> {
+    const existing = await this.db
+      .prepare('SELECT id, job_id, status, application_url FROM jobs WHERE id = ? OR job_id = ?')
+      .bind(jobIdOrHumanId, jobIdOrHumanId)
+      .first<{ id: string; job_id: string; status: string; application_url: string }>();
+
     if (!existing) return false;
 
+    const actualId = existing.id;
+    const humanId = existing.job_id;
     const oldStatus = existing.status;
     const nowIso = new Date().toISOString();
 
-    await this.db
-      .prepare('UPDATE jobs SET status = ?, updated_at = ? WHERE id = ?')
-      .bind(newStatus, nowIso, jobId)
-      .run();
+    const appliedAtVal = newStatus === 'APPLIED' ? nowIso : null;
+    const rejectedAtVal = newStatus === 'REJECTED' ? nowIso : null;
 
-    // Record history
+    // Update job record
     await this.db
       .prepare(
-        'INSERT INTO job_status_history (id, job_id, old_status, new_status, notes, changed_at) VALUES (?, ?, ?, ?, ?, ?)'
+        `UPDATE jobs
+         SET status = ?,
+             applied_at = COALESCE(applied_at, ?),
+             rejected_at = COALESCE(rejected_at, ?),
+             notes = COALESCE(?, notes),
+             updated_at = ?
+         WHERE id = ?`
       )
-      .bind(`hist_${Math.random().toString(36).slice(2, 9)}`, jobId, oldStatus, newStatus, notes || null, nowIso)
+      .bind(newStatus, appliedAtVal, rejectedAtVal, notes || null, nowIso, actualId)
+      .run();
+
+    // Create or update record in job_applications table
+    const appId = `app_${actualId}`;
+    await this.db
+      .prepare(
+        `INSERT INTO job_applications (
+          application_id, job_id, human_job_id, status, applied_at, application_url, notes, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(application_id) DO UPDATE SET
+          status = excluded.status,
+          applied_at = COALESCE(job_applications.applied_at, excluded.applied_at),
+          notes = COALESCE(excluded.notes, job_applications.notes),
+          updated_at = excluded.updated_at`
+      )
+      .bind(
+        appId,
+        actualId,
+        humanId,
+        newStatus.toLowerCase(),
+        appliedAtVal,
+        existing.application_url,
+        notes || null,
+        nowIso,
+        nowIso
+      )
+      .run();
+
+    // Record chronological entry in application_status_history
+    const historyId = `ash_${Math.random().toString(36).slice(2, 9)}`;
+    await this.db
+      .prepare(
+        `INSERT INTO application_status_history (
+          id, application_id, job_id, human_job_id, old_status, new_status, notes, changed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(historyId, appId, actualId, humanId, oldStatus, newStatus, notes || null, nowIso)
       .run();
 
     return true;
   }
 
+  public async getApplicationTimeline(jobId: string): Promise<ApplicationStatusHistory[]> {
+    const res = await this.db
+      .prepare(
+        `SELECT * FROM application_status_history
+         WHERE job_id = ? OR human_job_id = ?
+         ORDER BY changed_at ASC`
+      )
+      .bind(jobId, jobId)
+      .all<any>();
+
+    return (res.results || []).map(r => ({
+      id: r.id,
+      applicationId: r.application_id,
+      jobId: r.job_id,
+      humanJobId: r.human_job_id,
+      oldStatus: r.old_status,
+      newStatus: r.new_status,
+      changedAt: r.changed_at,
+      notes: r.notes || undefined,
+    }));
+  }
+
   public async updateJobNotes(jobId: string, notes: string): Promise<boolean> {
     const nowIso = new Date().toISOString();
     const res = await this.db
-      .prepare('UPDATE jobs SET notes = ?, updated_at = ? WHERE id = ?')
-      .bind(notes, nowIso, jobId)
+      .prepare('UPDATE jobs SET notes = ?, updated_at = ? WHERE id = ? OR job_id = ?')
+      .bind(notes, nowIso, jobId, jobId)
       .run();
     return res.success;
   }
 
   public async updateJobInterview(jobId: string, interviewDate: string, round?: string): Promise<boolean> {
     const nowIso = new Date().toISOString();
-    const res = await this.db
-      .prepare('UPDATE jobs SET interview_date = ?, interview_round = ?, status = ?, updated_at = ? WHERE id = ?')
-      .bind(interviewDate, round || null, 'INTERVIEW', nowIso, jobId)
+    await this.db
+      .prepare('UPDATE jobs SET interview_date = ?, interview_round = ?, status = ?, updated_at = ? WHERE id = ? OR job_id = ?')
+      .bind(interviewDate, round || null, 'INTERVIEW', nowIso, jobId, jobId)
       .run();
-    return res.success;
+
+    await this.updateJobStatus(jobId, 'INTERVIEW', round ? `Interview scheduled: ${round}` : undefined);
+    return true;
   }
 
   public async updateJobOffer(jobId: string, offerSalary: number, currency: string = 'INR'): Promise<boolean> {
     const nowIso = new Date().toISOString();
-    const res = await this.db
-      .prepare('UPDATE jobs SET offer_salary = ?, offer_currency = ?, status = ?, updated_at = ? WHERE id = ?')
-      .bind(offerSalary, currency, 'OFFER', nowIso, jobId)
+    await this.db
+      .prepare('UPDATE jobs SET offer_salary = ?, offer_currency = ?, status = ?, updated_at = ? WHERE id = ? OR job_id = ?')
+      .bind(offerSalary, currency, 'OFFER', nowIso, jobId, jobId)
       .run();
-    return res.success;
+
+    await this.updateJobStatus(jobId, 'OFFER', `Offer received: ${currency} ${offerSalary}`);
+    return true;
   }
 
   public async markJobViewed(jobId: string): Promise<void> {
     const nowIso = new Date().toISOString();
-    await this.db.prepare('UPDATE jobs SET viewed_at = ? WHERE id = ? AND viewed_at IS NULL').bind(nowIso, jobId).run();
+    await this.db.prepare('UPDATE jobs SET viewed_at = ? WHERE (id = ? OR job_id = ?) AND viewed_at IS NULL').bind(nowIso, jobId, jobId).run();
   }
 
-  // 3. Batched Job Upsert
+  // --- 5. Batched Job Upsert with Stable Human Job ID Generation ---
   public async upsertJobs(jobsWithMatch: Array<{ job: NormalizedJob; match: MatchResult }>): Promise<{ newCount: number; duplicateCount: number }> {
     let newCount = 0;
     let duplicateCount = 0;
     const nowIso = new Date().toISOString();
+    const currentYear = new Date().getFullYear();
 
     for (const { job, match } of jobsWithMatch) {
       const existing = await this.db
-        .prepare('SELECT id, status, first_seen_at FROM jobs WHERE fingerprint = ?')
+        .prepare('SELECT id, job_id, status FROM jobs WHERE fingerprint = ?')
         .bind(job.fingerprint)
-        .first<{ id: string; status: string; first_seen_at: string }>();
+        .first<{ id: string; job_id: string; status: string }>();
 
       if (existing) {
         duplicateCount++;
-        // Update last_seen_at
         await this.db
           .prepare('UPDATE jobs SET last_seen_at = ?, updated_at = ? WHERE id = ?')
           .bind(nowIso, nowIso, existing.id)
           .run();
       } else {
         newCount++;
-        // Insert new job
+        // Generate atomic sequential human-readable Job ID: JR-2026-000184
+        const humanJobId = await this.generateNextJobId(currentYear);
+
         await this.db
           .prepare(
             `INSERT INTO jobs (
-              id, source, source_job_id, company, company_domain, title, description,
-              location_json, remote_type, employment_type, seniority, date_posted, date_updated,
-              salary_min, salary_max, salary_currency, application_url, canonical_url,
-              source_url, discovered_at, first_seen_at, last_seen_at, fingerprint, status,
-              created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              id, job_id, source, source_job_id, company, company_domain, title, description,
+              location_json, remote_type, employment_type, seniority,
+              min_experience_years, max_experience_years, experience_text, salary_period,
+              date_posted, date_updated, salary_min, salary_max, salary_currency,
+              application_url, canonical_url, source_url, discovered_at, first_seen_at,
+              last_seen_at, fingerprint, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .bind(
             job.id,
+            humanJobId,
             job.source,
             job.sourceJobId || null,
             job.company,
@@ -556,6 +628,10 @@ export class JobRadarRepository {
             job.remoteType,
             job.employmentType,
             job.seniority,
+            job.minExperienceYears || null,
+            job.maxExperienceYears || null,
+            job.experienceText || null,
+            job.salaryPeriod || 'year',
             job.datePosted || null,
             job.dateUpdated || null,
             job.salaryMin || null,
@@ -602,12 +678,11 @@ export class JobRadarRepository {
     return { newCount, duplicateCount };
   }
 
-  // 4. Distributed Search Lock
+  // --- 6. Distributed Search Lock ---
   public async acquireLock(lockedBy: string, leaseMs: number = APP_CONFIG.search.lockTtlMs): Promise<boolean> {
     const nowIso = new Date().toISOString();
     const expiresIso = new Date(Date.now() + leaseMs).toISOString();
 
-    // Check if active lock exists
     const currentLock = await this.db
       .prepare('SELECT * FROM search_lock WHERE lock_id = ?')
       .bind('global_search_lock')
@@ -615,10 +690,8 @@ export class JobRadarRepository {
 
     if (currentLock) {
       if (new Date(currentLock.expires_at).getTime() > Date.now()) {
-        // Still valid active lock held by someone else
         return false;
       }
-      // Expired lock: take it over
       await this.db
         .prepare('UPDATE search_lock SET locked_by = ?, acquired_at = ?, expires_at = ? WHERE lock_id = ?')
         .bind(lockedBy, nowIso, expiresIso, 'global_search_lock')
@@ -626,7 +699,6 @@ export class JobRadarRepository {
       return true;
     }
 
-    // Insert lock
     try {
       await this.db
         .prepare('INSERT INTO search_lock (lock_id, locked_by, acquired_at, expires_at) VALUES (?, ?, ?, ?)')
@@ -642,7 +714,7 @@ export class JobRadarRepository {
     await this.db.prepare('DELETE FROM search_lock WHERE lock_id = ?').bind('global_search_lock').run();
   }
 
-  // 5. Search Run Tracking
+  // --- 7. Search Run Tracking ---
   public async recordSearchRun(result: SearchRunResult): Promise<void> {
     const nowIso = new Date().toISOString();
     await this.db
@@ -672,27 +744,6 @@ export class JobRadarRepository {
         nowIso
       )
       .run();
-
-    for (const src of result.sources) {
-      await this.db
-        .prepare(
-          `INSERT INTO search_run_sources (
-            id, run_id, source_id, status, jobs_found, new_jobs, duration_ms, error_message, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .bind(
-          `srs_${Math.random().toString(36).slice(2, 9)}`,
-          result.runId,
-          src.sourceId,
-          src.status,
-          src.jobsFound,
-          src.newJobs,
-          src.durationMs,
-          src.error || null,
-          nowIso
-        )
-        .run();
-    }
   }
 
   public async getRecentSearchRuns(limit: number = 10): Promise<any[]> {
@@ -703,7 +754,7 @@ export class JobRadarRepository {
     return runs.results || [];
   }
 
-  // 6. Analytics Aggregations
+  // --- 8. Analytics Aggregations ---
   public async getAnalytics(): Promise<any> {
     const statusCountsRes = await this.db
       .prepare('SELECT status, COUNT(*) as count FROM jobs GROUP BY status')
@@ -722,22 +773,18 @@ export class JobRadarRepository {
       statusCounts[r.status] = r.count;
     }
 
-    // Top companies
     const topCompaniesRes = await this.db
       .prepare('SELECT company, COUNT(*) as count FROM jobs GROUP BY company ORDER BY count DESC LIMIT 8')
       .all<{ company: string; count: number }>();
 
-    // Top sources
     const topSourcesRes = await this.db
       .prepare('SELECT source, COUNT(*) as count FROM jobs GROUP BY source ORDER BY count DESC')
       .all<{ source: string; count: number }>();
 
-    // Remote vs Onsite
     const remoteDistRes = await this.db
       .prepare('SELECT remote_type, COUNT(*) as count FROM jobs GROUP BY remote_type')
       .all<{ remote_type: string; count: number }>();
 
-    // Recent discovery daily trend (last 7 days)
     const dailyTrendRes = await this.db
       .prepare(
         `SELECT date(discovered_at) as day, COUNT(*) as count
@@ -764,10 +811,11 @@ export class JobRadarRepository {
     };
   }
 
-  // 7. Settings and Management
+  // --- 9. Data Export & Reset ---
   public async resetAllJobs(): Promise<void> {
     await this.db.prepare('DELETE FROM job_matches').run();
-    await this.db.prepare('DELETE FROM job_status_history').run();
+    await this.db.prepare('DELETE FROM application_status_history').run();
+    await this.db.prepare('DELETE FROM job_applications').run();
     await this.db.prepare('DELETE FROM search_run_sources').run();
     await this.db.prepare('DELETE FROM search_runs').run();
     await this.db.prepare('DELETE FROM jobs').run();
@@ -776,12 +824,71 @@ export class JobRadarRepository {
   public async exportAllData(): Promise<any> {
     const jobs = await this.db.prepare('SELECT * FROM jobs ORDER BY discovered_at DESC').all<any>();
     const profile = await this.getProfile();
-    const statusHistory = await this.db.prepare('SELECT * FROM job_status_history ORDER BY changed_at DESC').all<any>();
+    const appHistory = await this.db.prepare('SELECT * FROM application_status_history ORDER BY changed_at DESC').all<any>();
     return {
       exportDate: new Date().toISOString(),
       profile,
       jobs: jobs.results || [],
-      statusHistory: statusHistory.results || [],
+      applicationHistory: appHistory.results || [],
+    };
+  }
+
+  private mapRowToJob(r: any): NormalizedJob {
+    let matchScore: MatchResult | undefined;
+    if (r.overall_score !== null && r.overall_score !== undefined) {
+      matchScore = {
+        overallScore: r.overall_score,
+        titleScore: r.title_score,
+        skillScore: r.skill_score,
+        seniorityScore: r.seniority_score,
+        experienceScore: r.experience_score,
+        locationScore: r.location_score,
+        matchingSkills: JSON.parse(r.matching_skills_json || '[]'),
+        missingSkills: JSON.parse(r.missing_skills_json || '[]'),
+        explanation: JSON.parse(r.explanation_json || '{}'),
+        calculatedAt: r.calculated_at,
+      };
+    }
+
+    return {
+      id: r.id,
+      jobId: r.job_id || `JR-2026-${r.id.slice(-6).toUpperCase()}`,
+      source: r.source,
+      sourceJobId: r.source_job_id || undefined,
+      company: r.company,
+      companyDomain: r.company_domain || undefined,
+      title: r.title,
+      description: r.description || undefined,
+      location: JSON.parse(r.location_json || '[]'),
+      remoteType: r.remote_type,
+      employmentType: r.employment_type,
+      seniority: r.seniority,
+      minExperienceYears: r.min_experience_years || undefined,
+      maxExperienceYears: r.max_experience_years || undefined,
+      experienceText: r.experience_text || undefined,
+      salaryPeriod: r.salary_period || 'year',
+      datePosted: r.date_posted || undefined,
+      dateUpdated: r.date_updated || undefined,
+      salaryMin: r.salary_min || undefined,
+      salaryMax: r.salary_max || undefined,
+      salaryCurrency: r.salary_currency || undefined,
+      applicationUrl: r.application_url,
+      canonicalUrl: r.canonical_url || undefined,
+      sourceUrl: r.source_url,
+      discoveredAt: r.discovered_at,
+      firstSeenAt: r.first_seen_at,
+      lastSeenAt: r.last_seen_at,
+      fingerprint: r.fingerprint,
+      status: r.status as JobStatus,
+      appliedAt: r.applied_at || undefined,
+      rejectedAt: r.rejected_at || undefined,
+      notes: r.notes || undefined,
+      interviewDate: r.interview_date || undefined,
+      interviewRound: r.interview_round || undefined,
+      offerSalary: r.offer_salary || undefined,
+      offerCurrency: r.offer_currency || undefined,
+      viewedAt: r.viewed_at || undefined,
+      matchScore,
     };
   }
 }

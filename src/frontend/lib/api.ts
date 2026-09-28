@@ -6,6 +6,11 @@ import {
   JobStatus,
   FilterState,
   SearchRunResult,
+  BackendSearchConfig,
+  BackendMatchingConfig,
+  BackendNotificationConfig,
+  SecretStatus,
+  ApplicationStatusHistory,
 } from '../../types';
 
 class ApiClient {
@@ -67,6 +72,10 @@ class ApiClient {
     return this.request<NormalizedJob>(`/api/jobs/${id}`);
   }
 
+  public async getApplicationTimeline(jobId: string): Promise<ApplicationStatusHistory[]> {
+    return this.request<ApplicationStatusHistory[]>(`/api/jobs/${jobId}/timeline`);
+  }
+
   public async updateJobStatus(id: string, status: JobStatus, notes?: string): Promise<{ jobId: string; status: JobStatus }> {
     return this.request(`/api/jobs/${id}/status`, {
       method: 'PATCH',
@@ -125,6 +134,43 @@ class ApiClient {
     return this.request<{ message: string }>('/api/settings/reset-jobs', {
       method: 'POST',
     });
+  }
+
+  public async getSearchConfig(): Promise<BackendSearchConfig> {
+    return this.request<BackendSearchConfig>('/api/config/search');
+  }
+
+  public async saveSearchConfig(config: BackendSearchConfig): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/api/config/search', {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    });
+  }
+
+  public async getMatchingConfig(): Promise<BackendMatchingConfig> {
+    return this.request<BackendMatchingConfig>('/api/config/matching');
+  }
+
+  public async saveMatchingConfig(config: BackendMatchingConfig): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/api/config/matching', {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    });
+  }
+
+  public async getNotificationConfig(): Promise<BackendNotificationConfig> {
+    return this.request<BackendNotificationConfig>('/api/config/notifications');
+  }
+
+  public async saveNotificationConfig(config: BackendNotificationConfig): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/api/config/notifications', {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    });
+  }
+
+  public async getSecretsStatus(): Promise<SecretStatus> {
+    return this.request<SecretStatus>('/api/secrets/status');
   }
 }
 

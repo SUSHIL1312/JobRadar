@@ -12,6 +12,9 @@ import {
   Moon,
   Play,
 } from 'lucide-react';
+import { NormalizedJob } from '../../types';
+import { api } from '../lib/api';
+import { Badge } from './ui/Badge';
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -19,6 +22,7 @@ interface CommandPaletteProps {
   onNavigate: (route: string) => void;
   onRunSearch: () => void;
   onToggleTheme: () => void;
+  onSelectJob?: (job: NormalizedJob) => void;
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
@@ -27,14 +31,40 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onNavigate,
   onRunSearch,
   onToggleTheme,
+  onSelectJob,
 }) => {
   const [query, setQuery] = useState('');
+  const [jobResults, setJobResults] = useState<NormalizedJob[]>([]);
+  const [loadingJobs, setLoadingJobs] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setQuery('');
+      setJobResults([]);
     }
   }, [isOpen]);
+
+  // Debounced search for jobs by Job ID (JR-2026-000184), Source ID, or keyword
+  useEffect(() => {
+    if (!query || query.trim().length < 2) {
+      setJobResults([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setLoadingJobs(true);
+        const res = await api.getJobs({ searchQuery: query.trim(), pageSize: 5 });
+        setJobResults(res.jobs);
+      } catch (err) {
+        console.error('Command palette job search failed:', err);
+      } finally {
+        setLoadingJobs(false);
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [query]);
 
   // Handle escape key
   useEffect(() => {
@@ -62,7 +92,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     { id: 'theme', label: 'Toggle Light / Dark Mode', icon: Moon, action: onToggleTheme },
   ];
 
-  const filtered = commands.filter((c) =>
+  const filteredCommands = commands.filter((c) =>
     c.label.toLowerCase().includes(query.toLowerCase())
   );
 
@@ -75,14 +105,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       />
 
       {/* Modal Box */}
-      <div className="relative w-full max-w-lg bg-surface border border-border rounded-xl shadow-2xl overflow-hidden z-10 animate-slide-up">
+      <div className="relative w-full max-w-xl bg-surface border border-border rounded-xl shadow-2xl overflow-hidden z-10 animate-slide-up">
         {/* Input */}
         <div className="flex items-center px-4 py-3 border-b border-border gap-3">
           <Search className="w-5 h-5 text-text-muted" />
           <input
             type="text"
             autoFocus
-            placeholder="Type a command or navigate (e.g. Profile, Search)..."
+            placeholder="Search by Job ID (e.g. JR-2026-000184), Source ID, company, or command..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="flex-1 bg-transparent text-sm text-text-main placeholder:text-text-muted focus:outline-none"
@@ -92,30 +122,79 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           </kbd>
         </div>
 
-        {/* Command List */}
-        <div className="max-h-80 overflow-y-auto p-2 space-y-1">
-          {filtered.length === 0 ? (
-            <div className="p-4 text-center text-xs text-text-muted">
-              No matching commands found.
+        {/* Content List */}
+        <div className="max-h-96 overflow-y-auto p-2 space-y-3">
+          {/* Job Search Matches */}
+          {query.trim().length >= 2 && (
+            <div className="space-y-1">
+              <div className="px-3 py-1 text-[11px] font-semibold text-text-muted uppercase tracking-wider flex items-center justify-between">
+                <span>Matching Jobs</span>
+                {loadingJobs && <span className="text-[10px] lowercase opacity-70">Searching...</span>}
+              </div>
+              {jobResults.length === 0 && !loadingJobs ? (
+                <div className="px-3 py-2 text-xs text-text-muted italic">
+                  No jobs found matching "{query}"
+                </div>
+              ) : (
+                jobResults.map((job) => (
+                  <button
+                    key={job.id}
+                    onClick={() => {
+                      if (onSelectJob) {
+                        onSelectJob(job);
+                      }
+                      onClose();
+                    }}
+                    className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-sm text-text-main hover:bg-surface-elevated text-left transition-colors group"
+                  >
+                    <div className="min-w-0 flex items-center gap-2.5">
+                      <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-surface border border-border text-accent group-hover:border-accent">
+                        {job.jobId || job.id.slice(0, 10)}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-xs truncate group-hover:text-accent">
+                          {job.title}
+                        </div>
+                        <div className="text-[11px] text-text-muted truncate">
+                          {job.company} {job.sourceJobId ? `• Src #${job.sourceJobId}` : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <Badge variant="status" status={job.status} />
+                  </button>
+                ))
+              )}
             </div>
-          ) : (
-            filtered.map((c) => {
-              const Icon = c.icon;
-              return (
-                <button
-                  key={c.id}
-                  onClick={() => {
-                    c.action();
-                    onClose();
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-text-main hover:bg-surface-elevated hover:text-accent text-left transition-colors"
-                >
-                  <Icon className="w-4 h-4 text-text-muted group-hover:text-accent" />
-                  <span>{c.label}</span>
-                </button>
-              );
-            })
           )}
+
+          {/* Navigation & Commands */}
+          <div className="space-y-1">
+            <div className="px-3 py-1 text-[11px] font-semibold text-text-muted uppercase tracking-wider">
+              Commands & Navigation
+            </div>
+            {filteredCommands.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-text-muted italic">
+                No matching navigation commands
+              </div>
+            ) : (
+              filteredCommands.map((c) => {
+                const Icon = c.icon;
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => {
+                      c.action();
+                      onClose();
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-main hover:bg-surface-elevated hover:text-accent text-left transition-colors"
+                  >
+                    <Icon className="w-4 h-4 text-text-muted group-hover:text-accent" />
+                    <span>{c.label}</span>
+                  </button>
+                );
+              })
+            )}
+          </div>
         </div>
       </div>
     </div>

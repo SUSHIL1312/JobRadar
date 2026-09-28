@@ -18,7 +18,12 @@ import {
   Clock,
   Send,
   XCircle,
+  History,
+  Copy,
+  Check,
 } from 'lucide-react';
+import { api } from '../lib/api';
+import { ApplicationStatusHistory } from '../../types';
 
 interface JobDetailDrawerProps {
   job: NormalizedJob | null;
@@ -41,8 +46,11 @@ export const JobDetailDrawer: React.FC<JobDetailDrawerProps> = ({
   const [interviewDate, setInterviewDate] = useState('');
   const [interviewRound, setInterviewRound] = useState('');
   const [offerSalary, setOfferSalary] = useState('');
-  const [activeTab, setActiveTab] = useState<'details' | 'notes' | 'interview'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'timeline' | 'notes' | 'interview'>('details');
   const [savingNotes, setSavingNotes] = useState(false);
+  const [timeline, setTimeline] = useState<ApplicationStatusHistory[]>([]);
+  const [loadingTimeline, setLoadingTimeline] = useState(false);
+  const [copiedJobId, setCopiedJobId] = useState(false);
 
   useEffect(() => {
     if (job) {
@@ -51,8 +59,19 @@ export const JobDetailDrawer: React.FC<JobDetailDrawerProps> = ({
       setInterviewRound(job.interviewRound || '');
       setOfferSalary(job.offerSalary ? String(job.offerSalary) : '');
       setActiveTab('details');
+      setCopiedJobId(false);
     }
   }, [job]);
+
+  useEffect(() => {
+    if (job && activeTab === 'timeline') {
+      setLoadingTimeline(true);
+      api.getApplicationTimeline(job.id)
+        .then((res) => setTimeline(res))
+        .catch((err) => console.error('Failed to load application timeline:', err))
+        .finally(() => setLoadingTimeline(false));
+    }
+  }, [job, activeTab]);
 
   // Handle escape key
   useEffect(() => {
@@ -85,6 +104,23 @@ export const JobDetailDrawer: React.FC<JobDetailDrawerProps> = ({
                 <Building2 className="w-4 h-4 text-accent" />
                 {job.company}
               </span>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(job.jobId || job.id);
+                  setCopiedJobId(true);
+                  setTimeout(() => setCopiedJobId(false), 2000);
+                }}
+                className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-surface-elevated text-accent border border-border flex items-center gap-1 hover:border-accent transition-colors"
+                title="Click to copy Job ID"
+              >
+                {job.jobId || job.id.slice(0, 12)}
+                {copiedJobId ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3 opacity-60" />}
+              </button>
+              {job.sourceJobId && (
+                <span className="font-mono text-xs text-text-muted bg-surface-elevated px-1.5 py-0.5 rounded border border-border">
+                  #{job.sourceJobId}
+                </span>
+              )}
               <Badge variant="remote" remoteType={job.remoteType} />
               <Badge variant="status" status={job.status} />
               {match && <Badge variant="match" score={match.overallScore} />}
@@ -175,6 +211,17 @@ export const JobDetailDrawer: React.FC<JobDetailDrawerProps> = ({
             Job Details & Match
           </button>
           <button
+            onClick={() => setActiveTab('timeline')}
+            className={`py-2.5 px-3 border-b-2 transition-colors flex items-center gap-1.5 ${
+              activeTab === 'timeline'
+                ? 'border-accent text-accent'
+                : 'border-transparent text-text-muted hover:text-text-main'
+            }`}
+          >
+            <History className="w-3.5 h-3.5" />
+            Timeline {timeline.length > 0 ? `(${timeline.length})` : ''}
+          </button>
+          <button
             onClick={() => setActiveTab('notes')}
             className={`py-2.5 px-3 border-b-2 transition-colors ${
               activeTab === 'notes'
@@ -248,11 +295,18 @@ export const JobDetailDrawer: React.FC<JobDetailDrawerProps> = ({
               )}
 
               {/* Key metadata grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="p-3 rounded-lg border border-border bg-surface-elevated/40">
                   <div className="text-xs text-text-muted">Salary Range</div>
                   <div className="text-sm font-semibold text-text-main mt-0.5">
                     {formatSalary(job.salaryMin, job.salaryMax, job.salaryCurrency)}
+                    {job.salaryPeriod && job.salaryPeriod !== 'unknown' && job.salaryPeriod !== 'year' ? `/${job.salaryPeriod === 'hour' ? 'hr' : 'mo'}` : ''}
+                  </div>
+                </div>
+                <div className="p-3 rounded-lg border border-border bg-surface-elevated/40">
+                  <div className="text-xs text-text-muted">Experience Required</div>
+                  <div className="text-sm font-semibold text-text-main mt-0.5">
+                    {job.experienceText || (job.minExperienceYears !== undefined ? `${job.minExperienceYears}${job.maxExperienceYears ? `–${job.maxExperienceYears}` : '+'} years` : 'Not specified')}
                   </div>
                 </div>
                 <div className="p-3 rounded-lg border border-border bg-surface-elevated/40">
@@ -277,6 +331,56 @@ export const JobDetailDrawer: React.FC<JobDetailDrawerProps> = ({
                 </div>
               </div>
             </>
+          )}
+
+          {activeTab === 'timeline' && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold text-text-main">Application Lifecycle & Status History</h3>
+                <p className="text-xs text-text-muted mt-0.5">
+                  Complete audit trail of stage transitions for this job ({job.jobId || job.id.slice(0, 12)}).
+                </p>
+              </div>
+
+              {loadingTimeline ? (
+                <div className="py-8 text-center text-xs text-text-muted">Loading timeline...</div>
+              ) : timeline.length === 0 ? (
+                <div className="py-8 text-center text-xs text-text-muted bg-surface-elevated/30 rounded-xl border border-border p-4">
+                  No stage transitions recorded yet. Changes made via Status CTAs or the Application Tracker will appear here.
+                </div>
+              ) : (
+                <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-border">
+                  {timeline.map((event, idx) => (
+                    <div key={event.id || idx} className="relative group">
+                      {/* Timeline dot */}
+                      <div className="absolute -left-6 top-1 w-3 h-3 rounded-full bg-accent border-2 border-surface" />
+
+                      <div className="bg-surface-elevated/40 border border-border rounded-xl p-3.5 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
+                          <div className="flex items-center gap-2">
+                            {event.oldStatus ? (
+                              <>
+                                <Badge variant="status" status={event.oldStatus as JobStatus} />
+                                <span className="text-text-muted">→</span>
+                              </>
+                            ) : null}
+                            <Badge variant="status" status={event.newStatus as JobStatus} />
+                          </div>
+                          <span className="text-[11px] text-text-muted font-mono">
+                            {new Date(event.changedAt).toLocaleString()}
+                          </span>
+                        </div>
+                        {event.notes && (
+                          <p className="text-xs text-text-secondary bg-surface p-2 rounded-lg border border-border/60">
+                            {event.notes}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
 
           {activeTab === 'notes' && (
